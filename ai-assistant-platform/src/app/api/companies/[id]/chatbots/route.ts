@@ -55,7 +55,7 @@ export async function GET(
     // Get published chatbots
     const { data: chatbots, error: chatbotsError } = await supabase
       .from('chatbots')
-      .select('id, name, description, avatar_url, is_published')
+      .select('id, name, description, is_published')
       .eq('tenant_id', companyId)
       .eq('is_published', true)
       .order('name');

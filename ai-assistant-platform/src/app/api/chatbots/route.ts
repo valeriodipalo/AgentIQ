@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createServerClient, createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 // Demo mode constants
@@ -66,18 +66,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
 
     // Demo mode: use demo tenant when not authenticated
     const isDemoMode = !user;
+    // Use admin client in demo mode to bypass RLS
+    const supabase = isDemoMode ? createAdminClient() : authClient;
     let tenantId: string | null = null;
 
     if (user) {
       tenantId = await getUserTenantId(supabase, user.id);
     } else {
       tenantId = DEMO_TENANT_ID;
-      console.log('Public chatbots API: Using demo mode');
+      console.log('Public chatbots API: Using demo mode with admin client');
     }
 
     if (!tenantId) {

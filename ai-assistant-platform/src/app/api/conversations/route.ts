@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createServerClient, createAdminClient } from '@/lib/supabase/server';
 import { config } from '@/lib/config';
 import type { APIError, Conversation, ConversationListResponse, ConversationMetadata } from '@/types';
 
@@ -66,15 +66,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
 
     // Demo mode: use demo user when not authenticated
     const effectiveUserId = user?.id || DEMO_USER_ID;
     const isDemoMode = !user;
+    // Use admin client in demo mode to bypass RLS
+    const supabase = isDemoMode ? createAdminClient() : authClient;
 
     if (isDemoMode) {
-      console.log('Conversations API: Using demo mode');
+      console.log('Conversations API: Using demo mode with admin client');
     }
 
     // Query conversations with count
@@ -169,12 +171,14 @@ export async function POST(request: NextRequest) {
     const { title, model, metadata: customMetadata } = body;
 
     // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
 
     // Demo mode: use demo user/tenant when not authenticated
     const effectiveUserId = user?.id || DEMO_USER_ID;
     const isDemoMode = !user;
+    // Use admin client in demo mode to bypass RLS
+    const supabase = isDemoMode ? createAdminClient() : authClient;
 
     // Get tenant ID from user profile or use demo tenant
     let tenantId: string | null = null;
@@ -182,7 +186,7 @@ export async function POST(request: NextRequest) {
       tenantId = await getUserTenantId(supabase, user.id);
     } else {
       tenantId = DEMO_TENANT_ID;
-      console.log('Conversations API POST: Using demo mode');
+      console.log('Conversations API POST: Using demo mode with admin client');
     }
 
     if (!tenantId) {
@@ -280,14 +284,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
 
     // Demo mode: use demo user when not authenticated
     const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+    // Use admin client in demo mode to bypass RLS
+    const supabase = isDemoMode ? createAdminClient() : authClient;
 
-    if (!user) {
-      console.log('Conversations API PATCH: Using demo mode');
+    if (isDemoMode) {
+      console.log('Conversations API PATCH: Using demo mode with admin client');
     }
 
     // Verify conversation belongs to user
@@ -394,14 +401,17 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
 
     // Demo mode: use demo user when not authenticated
     const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+    // Use admin client in demo mode to bypass RLS
+    const supabase = isDemoMode ? createAdminClient() : authClient;
 
-    if (!user) {
-      console.log('Conversations API DELETE: Using demo mode');
+    if (isDemoMode) {
+      console.log('Conversations API DELETE: Using demo mode with admin client');
     }
 
     // Count how many conversations actually belong to the user
