@@ -20,6 +20,8 @@ This ensures alignment on requirements before any code is written.
 
 Multi-tenant AI chat platform built with Next.js 16 and Supabase. The platform enables corporate clients to deploy AI assistants with tenant-specific configurations, usage tracking, and feedback collection.
 
+**Production URL:** https://agent-iq-rose.vercel.app
+
 ## Commands
 
 ```bash
@@ -118,6 +120,27 @@ Optional:
 - **Tailwind CSS 4** for styling
 - **Zustand** for client state management
 - **TypeScript 5** with strict typing
+
+## Vercel Deployment
+
+The app is deployed on Vercel with the following configuration:
+
+**Project Settings (in Vercel Dashboard):**
+- **Root Directory:** `ai-assistant-platform`
+- **Framework Preset:** Next.js
+- **Build Command:** `npm run build` (auto-detected)
+- **Output Directory:** `.next` (auto-detected)
+
+**Environment Variables (set in Vercel Dashboard):**
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `OPENAI_API_KEY`
+
+**Important Notes:**
+- The `rootDirectory` setting must be configured in Vercel Dashboard, NOT in `vercel.json`
+- Environment variables must be set before deployment for build-time access
+- The `vercel.json` file at repository root only contains framework and region settings
 
 ## Database Migrations
 
