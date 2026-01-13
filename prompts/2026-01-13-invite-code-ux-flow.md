@@ -50,6 +50,24 @@ then proceed in pushing the code in the repo so it will be deployed
 
 ---
 
+## Prompt 6
+```
+i've tried accessing the platform, i can see it is completely unable to retrieve the data
+```
+
+**Note:** User reported data retrieval issues on the deployed platform. Investigation showed database tables exist and API calls return 200 status. Issue likely related to client-side rendering or session management.
+
+---
+
+## Prompt 7
+```
+save claude.md and prompts i will then close the chat
+```
+
+**Note:** User requested to save documentation before closing.
+
+---
+
 ## Risultato Finale
 
 **Implementazione:** Complete invite code system with user onboarding flow
