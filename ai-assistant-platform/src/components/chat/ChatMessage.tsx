@@ -16,7 +16,7 @@ export interface ChatMessageProps {
   createdAt?: Date;
   isStreaming?: boolean;
   feedback?: 'positive' | 'negative' | null;
-  onFeedback?: (messageId: string, rating: 'positive' | 'negative') => void;
+  onFeedback?: (messageId: string, rating: 'positive' | 'negative', notes?: string) => void;
 }
 
 /**
@@ -50,10 +50,10 @@ function renderMarkdown(content: string): React.ReactNode {
 
     // Handle inline formatting
     return (
-      <span key={index}>
+      <span key={`part-${index}`}>
         {part.split('\n').map((line, lineIndex, lines) => (
-          <span key={lineIndex}>
-            {renderInlineMarkdown(line)}
+          <span key={`line-${index}-${lineIndex}`}>
+            {renderInlineMarkdown(line, `${index}-${lineIndex}`)}
             {lineIndex < lines.length - 1 && <br />}
           </span>
         ))}
@@ -62,15 +62,23 @@ function renderMarkdown(content: string): React.ReactNode {
   });
 }
 
-function renderInlineMarkdown(text: string): React.ReactNode {
+// Generate unique key using content hash
+let globalKeyCounter = 0;
+function getUniqueKey(prefix: string): string {
+  return `${prefix}-${globalKeyCounter++}-${Date.now()}`;
+}
+
+function renderInlineMarkdown(text: string, partKey: string = ''): React.ReactNode {
   // Handle inline code
   const parts = text.split(/(`[^`]+`)/g);
 
   return parts.map((part, index) => {
+    const baseKey = `${partKey}-${index}`;
+
     if (part.startsWith('`') && part.endsWith('`')) {
       return (
         <code
-          key={index}
+          key={`code-${baseKey}`}
           className="rounded bg-zinc-200 px-1.5 py-0.5 text-sm font-mono dark:bg-zinc-700"
         >
           {part.slice(1, -1)}
@@ -82,15 +90,15 @@ function renderInlineMarkdown(text: string): React.ReactNode {
     let result: React.ReactNode = part;
 
     // Bold: **text**
-    result = replacePattern(result, /\*\*([^*]+)\*\*/g, (match, text, idx) => (
-      <strong key={`bold-${idx}`} className="font-semibold">
+    result = replacePattern(result, /\*\*([^*]+)\*\*/g, (match, text, _url, idx) => (
+      <strong key={getUniqueKey('bold')} className="font-semibold">
         {text}
       </strong>
     ));
 
     // Italic: *text*
-    result = replacePattern(result, /\*([^*]+)\*/g, (match, text, idx) => (
-      <em key={`italic-${idx}`}>{text}</em>
+    result = replacePattern(result, /\*([^*]+)\*/g, (match, text, _url, idx) => (
+      <em key={getUniqueKey('italic')}>{text}</em>
     ));
 
     // Links: [text](url)
@@ -99,7 +107,7 @@ function renderInlineMarkdown(text: string): React.ReactNode {
       /\[([^\]]+)\]\(([^)]+)\)/g,
       (match, text, url, idx) => (
         <a
-          key={`link-${idx}`}
+          key={getUniqueKey('link')}
           href={url}
           target="_blank"
           rel="noopener noreferrer"
@@ -110,7 +118,7 @@ function renderInlineMarkdown(text: string): React.ReactNode {
       )
     );
 
-    return <span key={index}>{result}</span>;
+    return <span key={`span-${baseKey}`}>{result}</span>;
   });
 }
 

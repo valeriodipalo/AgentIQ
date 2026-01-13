@@ -49,11 +49,31 @@ cd ai-assistant-platform && npm run lint   # Run ESLint
 ai-assistant-platform/src/
 ├── app/
 │   ├── api/
+│   │   ├── admin/
+│   │   │   ├── analytics/      # Usage analytics API
+│   │   │   ├── chatbots/       # Admin CRUD for chatbots
+│   │   │   ├── companies/      # Company (tenant) management API
+│   │   │   │   ├── route.ts    # List/create companies
+│   │   │   │   └── [id]/       # Single company CRUD, users, stats
+│   │   │   └── conversations/  # Conversation browser API with filters
 │   │   ├── chat/route.ts       # Main chat endpoint (Edge runtime, streaming)
+│   │   ├── chatbots/route.ts   # Public chatbots list endpoint
+│   │   ├── companies/[slug]/   # Public company info by slug
 │   │   ├── conversations/      # CRUD for conversations
 │   │   ├── feedback/route.ts   # Message feedback submission
 │   │   └── usage/route.ts      # Usage metrics endpoint
-│   ├── chat/page.tsx           # Main chat UI (client component)
+│   ├── admin/                  # Admin panel pages
+│   │   ├── layout.tsx          # Admin sidebar layout
+│   │   ├── page.tsx            # Admin dashboard
+│   │   ├── analytics/          # Usage analytics
+│   │   ├── chatbots/           # Chatbot management (list, new, edit)
+│   │   ├── companies/          # Company management
+│   │   │   ├── page.tsx        # Companies list
+│   │   │   ├── new/            # Create company
+│   │   │   └── [id]/           # Company dashboard, users management
+│   │   └── conversations/      # Conversation browser with filters
+│   ├── chat/page.tsx           # Main chat UI (supports company context)
+│   ├── chatbots/page.tsx       # User control panel (chatbot selection)
 │   └── page.tsx                # Landing page
 ├── components/
 │   ├── chat/                   # Chat-specific components
@@ -67,7 +87,7 @@ ai-assistant-platform/src/
 │   └── usage/                  # Usage tracking helpers
 ├── middleware.ts               # Auth session refresh, protected routes
 └── types/
-    ├── index.ts                # Application types
+    ├── index.ts                # Application types (includes ChatbotSettings)
     └── database.ts             # Supabase database types
 ```
 
@@ -82,13 +102,130 @@ ai-assistant-platform/src/
 
 ### Database Schema
 
-Six main tables with RLS enabled:
+Nine main tables with RLS enabled:
 - `tenants` - Organization/company accounts with settings
-- `users` - User profiles linked to tenants
-- `conversations` - Chat sessions
+- `users` - User profiles linked to tenants (with `invited_via` reference)
+- `invite_codes` - Invite codes for company access (code, max_uses, expires_at)
+- `invite_redemptions` - Tracks which users redeemed which codes
+- `chatbots` - AI assistant configurations with extended model parameters
+- `conversations` - Chat sessions (linked to chatbots)
 - `messages` - Individual messages in conversations
 - `feedback` - User ratings on assistant messages
 - `usage_metrics` - Token usage tracking per user/day/model
+
+### Multi-Company Architecture
+
+The platform supports multiple companies (tenants) with isolated data:
+
+```
+Company (tenant)
+├── name, slug, branding
+├── Invite Codes
+│   ├── code, max_uses, current_uses, expires_at
+│   └── Redemptions (tracks who used each code)
+├── Users (employees/customers)
+│   ├── name, email, role (admin/user)
+│   ├── invited_via → which invite code
+│   └── auth_id (for future Supabase Auth)
+├── Chatbots (agents)
+│   ├── Assigned to company via tenant_id
+│   └── is_published controls visibility
+└── Conversations
+    ├── user_id → who chatted
+    ├── chatbot_id → which agent
+    └── messages → chat content with feedback
+```
+
+### Invite Code System
+
+Users join companies via invite codes. The flow is:
+
+1. **Admin creates invite code** at `/admin/companies/[id]/invites`
+   - Auto-generated or custom code
+   - Optional max uses and expiration date
+   - Can deactivate/delete codes
+
+2. **User enters code** on landing page (`/`)
+   - Code validated via `/api/invite/validate`
+   - Shows company name and branding
+
+3. **User completes registration** at `/join?code=XXX`
+   - Enters name and email
+   - Code redeemed via `/api/invite/redeem`
+   - Session created and stored in localStorage
+
+4. **User accesses workspace** at `/workspace`
+   - Session-based authentication (no Supabase Auth required)
+   - Access to assigned chatbots
+   - Conversation history
+
+**Invite Code APIs:**
+- `POST /api/invite/validate` - Check if code is valid
+- `POST /api/invite/redeem` - Redeem code and create/login user
+- `POST /api/invite/lookup` - Lookup existing user by email
+
+**Admin Invite APIs:**
+- `GET /api/admin/companies/[id]/invites` - List codes with stats
+- `POST /api/admin/companies/[id]/invites` - Create new code
+- `GET/PUT/DELETE /api/admin/companies/[id]/invites/[code]` - Manage single code
+
+### Session Management
+
+Sessions are stored in localStorage (key: `agent_iq_session`):
+
+```typescript
+interface UserSession {
+  user: { id: string; name: string; email: string; };
+  company: { id: string; name: string; slug: string; branding: {...} | null; };
+  token: string;
+  created_at: string;
+  last_active: string;
+}
+```
+
+**Session utilities** in `/src/lib/session/index.ts`:
+- `getSession()` - Get current session or null
+- `saveSession(session)` - Save session to localStorage
+- `clearSession()` - Remove session (logout)
+- `isSessionValid(session)` - Check if session is still valid (30 day expiry)
+
+**Workspace Routes** (require valid session):
+- `/workspace` - Home with chatbot list and recent conversations
+- `/workspace/chat?agent=ID` - Chat with specific chatbot
+- `/workspace/history` - Full conversation history
+
+**Legacy Company Access:**
+- URL pattern: `/chat?company=<slug>` still works
+- User identification via name/email prompt (stored in localStorage)
+- Only shows published chatbots for that company
+
+**Admin Hierarchy:**
+- `/admin/companies` - List all companies with stats
+- `/admin/companies/[id]` - Company dashboard (users, agents, conversations)
+- `/admin/companies/[id]/invites` - Invite code management
+- `/admin/conversations` - Browse all conversations with filters (company, agent, user)
+
+**Demo Mode:**
+- Uses `DEMO_USER_ID` and `DEMO_TENANT_ID` for unauthenticated access
+- Admin client bypasses RLS policies in demo mode
+- Demo tenant: `00000000-0000-0000-0000-000000000001`
+- Demo user: `00000000-0000-0000-0000-000000000002`
+
+### Chatbot Configuration
+
+Chatbots support extended model parameters stored in a `settings` JSONB column:
+
+**Model Parameters (`settings.model_params`):**
+- `top_p` - Nucleus sampling (0-1, alternative to temperature)
+- `frequency_penalty` - Reduces token repetition (-2 to 2)
+- `presence_penalty` - Encourages new topics (-2 to 2)
+
+**Provider Options (`settings.provider_options`):**
+- `reasoning_effort` - For reasoning models: 'none', 'low', 'medium', 'high'
+- `text_verbosity` - Response detail level: 'low', 'medium', 'high'
+- `store` - Store completions for retrieval
+
+**Reasoning Models:** `o1`, `o3`, `o3-mini`, `gpt-5.1` support reasoning parameters.
 
 ### Authentication
 

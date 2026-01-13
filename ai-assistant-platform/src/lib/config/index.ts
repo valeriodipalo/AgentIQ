@@ -77,6 +77,7 @@ export const config = {
 
   // Model pricing (per 1000 tokens in USD)
   modelPricing: {
+    'gpt-5.1': { prompt: 0.02, completion: 0.06 },
     'gpt-4-turbo-preview': { prompt: 0.01, completion: 0.03 },
     'gpt-4-turbo': { prompt: 0.01, completion: 0.03 },
     'gpt-4': { prompt: 0.03, completion: 0.06 },

@@ -126,7 +126,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { title, status, metadata: customMetadata } = body;
+    const { title, is_archived, metadata: customMetadata } = body;
 
     // Validate title length if provided
     if (title !== undefined && title.length > 255) {
@@ -134,17 +134,6 @@ export async function PATCH(
         {
           code: 'VALIDATION_ERROR',
           message: 'Title must be 255 characters or less',
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate status if provided
-    if (status !== undefined && !['active', 'archived', 'deleted'].includes(status)) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid status. Must be one of: active, archived, deleted.',
         },
         { status: 400 }
       );
@@ -191,8 +180,8 @@ export async function PATCH(
       updates.title = title;
     }
 
-    if (status !== undefined) {
-      updates.status = status;
+    if (is_archived !== undefined) {
+      updates.is_archived = is_archived;
     }
 
     if (customMetadata !== undefined) {
@@ -323,7 +312,7 @@ export async function DELETE(
       // Archive conversation (soft delete)
       const { error: updateError } = await supabase
         .from('conversations')
-        .update({ status: 'archived', updated_at: new Date().toISOString() })
+        .update({ is_archived: true, updated_at: new Date().toISOString() })
         .eq('id', conversationId)
         .eq('user_id', user.id);
 

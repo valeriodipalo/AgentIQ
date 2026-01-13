@@ -76,14 +76,11 @@ export interface Conversation {
   tenant_id: string;
   user_id: string;
   title: string;
-  summary?: string;
-  status: ConversationStatus;
+  is_archived: boolean;
   metadata: ConversationMetadata;
   created_at: string;
   updated_at: string;
 }
-
-export type ConversationStatus = 'active' | 'archived' | 'deleted';
 
 export interface ConversationMetadata {
   /** Total number of messages in conversation */
@@ -109,6 +106,13 @@ export interface Message {
   content: string;
   metadata: MessageMetadata;
   created_at: string;
+  /** Feedback associated with this message (empty array if none) */
+  feedback?: Array<{
+    id: string;
+    rating: number;
+    notes: string | null;
+    created_at: string;
+  }>;
 }
 
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -182,6 +186,8 @@ export interface FeedbackMetadata {
 export interface ChatRequest {
   message: string;
   conversation_id?: string;
+  /** Chatbot ID to use specific chatbot configuration */
+  chatbot_id?: string;
   /** Override default model for this request */
   model?: string;
   /** Override default temperature */
@@ -215,7 +221,103 @@ export interface FeedbackRequest {
   message_id: string;
   rating: FeedbackRating;
   comment?: string;
+  /** Additional notes/text feedback */
+  notes?: string;
   category?: FeedbackCategory;
+}
+
+// ============================================================================
+// Chatbot Types
+// ============================================================================
+
+/**
+ * Model generation parameters (standard AI SDK support)
+ */
+export interface ChatbotModelParams {
+  /** Sampling temperature (0-2, default 1) */
+  temperature?: number;
+  /** Maximum output tokens (1-128000) */
+  max_tokens?: number;
+  /** Nucleus sampling (0-1, default 1) - alternative to temperature */
+  top_p?: number;
+  /** Frequency penalty (-2 to 2, default 0) - reduces token repetition */
+  frequency_penalty?: number;
+  /** Presence penalty (-2 to 2, default 0) - encourages new topics */
+  presence_penalty?: number;
+  /** Stop sequences (up to 4) - stops generation at these strings */
+  stop_sequences?: string[];
+  /** Seed for deterministic output */
+  seed?: number;
+}
+
+/**
+ * OpenAI provider-specific options
+ */
+export interface ChatbotProviderOptions {
+  /** Reasoning effort for reasoning models (o1, o3, gpt-5.1) */
+  reasoning_effort?: 'none' | 'low' | 'medium' | 'high';
+  /** Text verbosity for reasoning models */
+  text_verbosity?: 'low' | 'medium' | 'high';
+  /** Store completion for retrieval */
+  store?: boolean;
+  /** End-user identifier for abuse tracking */
+  user_identifier?: string;
+}
+
+/**
+ * Response format configuration
+ */
+export interface ChatbotResponseFormat {
+  type: 'text' | 'json_object' | 'json_schema';
+  json_schema?: {
+    name: string;
+    description?: string;
+    schema: Record<string, unknown>;
+    strict?: boolean;
+  };
+}
+
+/**
+ * Extended chatbot settings stored in JSONB column
+ */
+export interface ChatbotSettings {
+  model_params?: ChatbotModelParams;
+  provider_options?: ChatbotProviderOptions;
+  response_format?: ChatbotResponseFormat;
+}
+
+/**
+ * Full chatbot configuration
+ */
+export interface Chatbot {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description?: string;
+  system_prompt: string;
+  model: string;
+  /** Temperature (stored in column for backward compat) */
+  temperature: number;
+  /** Max tokens (stored in column for backward compat) */
+  max_tokens: number;
+  /** Extended settings in JSONB */
+  settings?: ChatbotSettings;
+  is_published: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Models that support reasoning parameters
+ */
+export const REASONING_MODELS = ['o1', 'o3', 'o3-mini', 'gpt-5.1'] as const;
+
+/**
+ * Check if a model supports reasoning parameters
+ */
+export function supportsReasoningParams(model: string): boolean {
+  return REASONING_MODELS.some(m => model.includes(m));
 }
 
 // ============================================================================

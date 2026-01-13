@@ -8,6 +8,10 @@ import { createServerClient } from '@/lib/supabase/server';
 import { config } from '@/lib/config';
 import type { APIError, Conversation, ConversationListResponse, ConversationMetadata } from '@/types';
 
+// Demo mode constants
+const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
+const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
 /**
  * Extended conversation type with additional computed fields
  */
@@ -47,7 +51,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const perPage = parseInt(searchParams.get('per_page') || '20', 10);
-    const status = searchParams.get('status') || 'active';
+    const archived = searchParams.get('archived') === 'true';
     const search = searchParams.get('search')?.trim();
 
     // Validate pagination
@@ -61,29 +65,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Validate status
-    if (!['active', 'archived', 'deleted'].includes(status)) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid status. Must be one of: active, archived, deleted.',
-        },
-        { status: 400 }
-      );
-    }
-
     // Get Supabase client and check authentication
     const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user when not authenticated
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+
+    if (isDemoMode) {
+      console.log('Conversations API: Using demo mode');
     }
 
     // Query conversations with count
@@ -91,8 +82,8 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('conversations')
       .select('*', { count: 'exact' })
-      .eq('user_id', user.id)
-      .eq('status', status)
+      .eq('user_id', effectiveUserId)
+      .eq('is_archived', archived)
       .order('updated_at', { ascending: false });
 
     // Add search filter if provided
@@ -179,20 +170,21 @@ export async function POST(request: NextRequest) {
 
     // Get Supabase client and check authentication
     const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user/tenant when not authenticated
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+
+    // Get tenant ID from user profile or use demo tenant
+    let tenantId: string | null = null;
+    if (user) {
+      tenantId = await getUserTenantId(supabase, user.id);
+    } else {
+      tenantId = DEMO_TENANT_ID;
+      console.log('Conversations API POST: Using demo mode');
     }
 
-    // Get tenant ID from user profile
-    const tenantId = await getUserTenantId(supabase, user.id);
     if (!tenantId) {
       return NextResponse.json<APIError>(
         {
@@ -219,9 +211,9 @@ export async function POST(request: NextRequest) {
       .from('conversations')
       .insert({
         tenant_id: tenantId,
-        user_id: user.id,
+        user_id: effectiveUserId,
         title: title || 'New Conversation',
-        status: 'active',
+        is_archived: false,
         metadata: {
           message_count: 0,
           total_tokens: 0,
@@ -264,7 +256,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { conversation_id, title, status, metadata: customMetadata } = body;
+    const { conversation_id, title, is_archived, metadata: customMetadata } = body;
 
     if (!conversation_id) {
       return NextResponse.json<APIError>(
@@ -287,29 +279,15 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Validate status if provided
-    if (status && !['active', 'archived', 'deleted'].includes(status)) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid status. Must be one of: active, archived, deleted.',
-        },
-        { status: 400 }
-      );
-    }
-
     // Get Supabase client and check authentication
     const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user when not authenticated
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+
+    if (!user) {
+      console.log('Conversations API PATCH: Using demo mode');
     }
 
     // Verify conversation belongs to user
@@ -317,7 +295,7 @@ export async function PATCH(request: NextRequest) {
       .from('conversations')
       .select('id, metadata')
       .eq('id', conversation_id)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .single();
 
     if (fetchError || !existing) {
@@ -339,8 +317,8 @@ export async function PATCH(request: NextRequest) {
       updates.title = title;
     }
 
-    if (status !== undefined) {
-      updates.status = status;
+    if (is_archived !== undefined) {
+      updates.is_archived = is_archived;
     }
 
     if (customMetadata !== undefined) {
@@ -356,7 +334,7 @@ export async function PATCH(request: NextRequest) {
       .from('conversations')
       .update(updates)
       .eq('id', conversation_id)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .select()
       .single();
 
@@ -417,23 +395,20 @@ export async function DELETE(request: NextRequest) {
 
     // Get Supabase client and check authentication
     const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user when not authenticated
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+
+    if (!user) {
+      console.log('Conversations API DELETE: Using demo mode');
     }
 
     // Count how many conversations actually belong to the user
     const { count: existingCount, error: countError } = await supabase
       .from('conversations')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .in('id', conversation_ids);
 
     if (countError) {
@@ -462,7 +437,7 @@ export async function DELETE(request: NextRequest) {
       const { error: deleteError } = await supabase
         .from('conversations')
         .delete()
-        .eq('user_id', user.id)
+        .eq('user_id', effectiveUserId)
         .in('id', conversation_ids);
 
       if (deleteError) {
@@ -480,8 +455,8 @@ export async function DELETE(request: NextRequest) {
       // Archive conversations (soft delete)
       const { error: updateError } = await supabase
         .from('conversations')
-        .update({ status: 'archived', updated_at: new Date().toISOString() })
-        .eq('user_id', user.id)
+        .update({ is_archived: true, updated_at: new Date().toISOString() })
+        .eq('user_id', effectiveUserId)
         .in('id', conversation_ids);
 
       if (updateError) {

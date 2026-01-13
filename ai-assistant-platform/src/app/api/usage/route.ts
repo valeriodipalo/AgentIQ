@@ -64,43 +64,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch usage data using the helper function
-    const { data: dailyUsage, error: usageError } = await supabase.rpc(
-      'get_user_daily_usage',
-      {
-        p_user_id: user.id,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      }
-    );
-
-    if (usageError) {
-      console.error('Error fetching usage data:', usageError);
-
-      // Fall back to direct query if function doesn't exist
-      const { data: fallbackUsage, error: fallbackError } = await supabase
-        .from('usage_metrics')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date', { ascending: false });
-
-      if (fallbackError) {
-        return NextResponse.json<APIError>(
-          {
-            code: 'SUPABASE_ERROR',
-            message: 'Error fetching usage data',
-            details: { error: fallbackError.message },
-          },
-          { status: 500 }
-        );
-      }
-
-      return formatUsageResponse(fallbackUsage || [], startDate, endDate, groupBy);
-    }
-
-    return formatUsageResponse(dailyUsage || [], startDate, endDate, groupBy);
+    // Usage metrics table not yet implemented - return empty usage data
+    // TODO: Create usage_metrics table and increment_usage_metrics function
+    return formatUsageResponse([], startDate, endDate, groupBy);
   } catch (error) {
     console.error('Usage API error:', error);
     return NextResponse.json<APIError>(

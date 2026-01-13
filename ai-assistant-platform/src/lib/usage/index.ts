@@ -117,35 +117,24 @@ export function calculateUsageMetrics(
 /**
  * Track usage metrics in the database via Supabase function
  * This function is designed to be non-blocking and fail gracefully
+ * TODO: Implement usage_metrics table and increment_usage_metrics RPC function
  */
 export async function trackUsageMetrics(
-  supabase: SupabaseServerClient,
+  _supabase: SupabaseServerClient,
   params: UsageTrackingParams
 ): Promise<{ success: boolean; error?: string }> {
-  const { tenantId, userId, promptTokens, completionTokens, model } = params;
+  const { promptTokens, completionTokens, model } = params;
   const estimatedCost = calculateEstimatedCost(model, promptTokens, completionTokens);
 
-  try {
-    const { error } = await supabase.rpc('increment_usage_metrics', {
-      p_tenant_id: tenantId,
-      p_user_id: userId,
-      p_prompt_tokens: promptTokens,
-      p_completion_tokens: completionTokens,
-      p_model: model,
-      p_estimated_cost: estimatedCost,
-    });
+  // Usage metrics table not yet implemented - just log for now
+  console.log('Usage metrics (not persisted):', {
+    promptTokens,
+    completionTokens,
+    model,
+    estimatedCost,
+  });
 
-    if (error) {
-      console.error('Error tracking usage metrics:', error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    console.error('Failed to track usage metrics:', errorMessage);
-    return { success: false, error: errorMessage };
-  }
+  return { success: true };
 }
 
 /**

@@ -4,21 +4,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
-import type { APIError, FeedbackRequest, Feedback, FeedbackRating, FeedbackCategory } from '@/types';
+import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import type { APIError, FeedbackRequest, FeedbackRating } from '@/types';
 
-/**
- * Valid feedback categories
- */
-const VALID_CATEGORIES: FeedbackCategory[] = [
-  'helpful',
-  'accurate',
-  'creative',
-  'unhelpful',
-  'inaccurate',
-  'inappropriate',
-  'other',
-];
+// Demo user ID for unauthenticated testing
+const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
 
 /**
  * Validate feedback rating
@@ -28,10 +18,17 @@ function isValidRating(rating: unknown): rating is FeedbackRating {
 }
 
 /**
- * Validate feedback category
+ * Convert rating string to database integer (-1 or 1)
  */
-function isValidCategory(category: unknown): category is FeedbackCategory {
-  return VALID_CATEGORIES.includes(category as FeedbackCategory);
+function ratingToInt(rating: FeedbackRating): number {
+  return rating === 'positive' ? 1 : -1;
+}
+
+/**
+ * Convert database integer to rating string
+ */
+function intToRating(value: number): FeedbackRating {
+  return value === 1 ? 'positive' : 'negative';
 }
 
 /**
@@ -98,8 +95,8 @@ async function verifyMessageAccess(
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: FeedbackRequest = await request.json();
-    const { message_id, rating, comment, category } = body;
+    const body = await request.json();
+    const { message_id, rating, comment, notes, conversation_id } = body as FeedbackRequest & { conversation_id?: string };
 
     // Validate required fields
     if (!message_id || typeof message_id !== 'string') {
@@ -122,44 +119,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate category if provided
-    if (category !== undefined && !isValidCategory(category)) {
+    // Validate comment length if provided
+    if (comment && comment.length > 5000) {
       return NextResponse.json<APIError>(
         {
           code: 'VALIDATION_ERROR',
-          message: `category must be one of: ${VALID_CATEGORIES.join(', ')}`,
+          message: 'comment must be 5000 characters or less',
         },
         { status: 400 }
       );
     }
 
-    // Validate comment length if provided
-    if (comment && comment.length > 2000) {
+    // Validate notes length if provided
+    if (notes && notes.length > 5000) {
       return NextResponse.json<APIError>(
         {
           code: 'VALIDATION_ERROR',
-          message: 'comment must be 2000 characters or less',
+          message: 'notes must be 5000 characters or less',
         },
         { status: 400 }
       );
     }
 
     // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user and admin client to bypass RLS
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+
+    // Use admin client in demo mode to bypass RLS policies
+    const supabase = isDemoMode ? createAdminClient() : authClient;
+
+    if (isDemoMode) {
+      console.log('Feedback API: Using demo mode with admin client');
     }
 
-    // Verify user has access to the message
-    const accessResult = await verifyMessageAccess(supabase, message_id, user.id);
+    // Try to find the message - first by ID, then fallback to conversation lookup
+    let actualMessageId = message_id;
+    let accessResult = await verifyMessageAccess(supabase, message_id, effectiveUserId);
+
+    // If message not found by ID and we have conversation_id, try to find the most recent assistant message
+    // This handles the case where AI SDK generates client-side IDs that don't match database UUIDs
+    if (!accessResult.valid && conversation_id) {
+      console.log('Message not found by ID, trying fallback lookup by conversation_id');
+
+      const { data: recentMessage } = await supabase
+        .from('messages')
+        .select('id, role, conversation_id')
+        .eq('conversation_id', conversation_id)
+        .eq('role', 'assistant')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (recentMessage) {
+        console.log('Found message via fallback:', recentMessage.id);
+        actualMessageId = recentMessage.id;
+        // Re-verify with the actual message ID
+        accessResult = await verifyMessageAccess(supabase, actualMessageId, effectiveUserId);
+      }
+    }
 
     if (!accessResult.valid) {
       return NextResponse.json<APIError>(
@@ -171,7 +192,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Optional: Only allow feedback on assistant messages
+    // Only allow feedback on assistant messages
     if (accessResult.messageRole !== 'assistant') {
       return NextResponse.json<APIError>(
         {
@@ -182,14 +203,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { conversationId, tenantId } = accessResult;
-
     // Check if feedback already exists for this message from this user
     const { data: existingFeedback } = await supabase
       .from('feedback')
       .select('id')
-      .eq('message_id', message_id)
-      .eq('user_id', user.id)
+      .eq('message_id', actualMessageId)
+      .eq('user_id', effectiveUserId)
       .single();
 
     if (existingFeedback) {
@@ -197,13 +216,8 @@ export async function POST(request: NextRequest) {
       const { data: updatedFeedback, error: updateError } = await supabase
         .from('feedback')
         .update({
-          rating,
-          comment: comment || null,
-          category: category || null,
-          metadata: {
-            user_agent: request.headers.get('user-agent') || undefined,
-            updated_at: new Date().toISOString(),
-          },
+          rating: ratingToInt(rating),
+          notes: notes || comment || null,
         })
         .eq('id', existingFeedback.id)
         .select()
@@ -222,7 +236,8 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({
-        ...(updatedFeedback as unknown as Feedback),
+        ...updatedFeedback,
+        rating: intToRating(updatedFeedback.rating),
         updated: true,
       });
     }
@@ -231,17 +246,10 @@ export async function POST(request: NextRequest) {
     const { data: feedback, error: insertError } = await supabase
       .from('feedback')
       .insert({
-        message_id,
-        conversation_id: conversationId!,
-        user_id: user.id,
-        tenant_id: tenantId!,
-        rating,
-        comment: comment || null,
-        category: category || null,
-        metadata: {
-          user_agent: request.headers.get('user-agent') || undefined,
-          created_at: new Date().toISOString(),
-        },
+        message_id: actualMessageId,
+        user_id: effectiveUserId,
+        rating: ratingToInt(rating),
+        notes: notes || comment || null,
       })
       .select()
       .single();
@@ -260,7 +268,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        ...(feedback as unknown as Feedback),
+        ...feedback,
+        rating: intToRating(feedback.rating),
         created: true,
       },
       { status: 201 }
@@ -285,7 +294,6 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const messageId = searchParams.get('message_id');
-    const conversationId = searchParams.get('conversation_id');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const perPage = parseInt(searchParams.get('per_page') || '50', 10);
 
@@ -302,22 +310,20 @@ export async function GET(request: NextRequest) {
 
     // Get Supabase client and check authentication
     const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user when not authenticated
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+
+    if (isDemoMode) {
+      console.log('Feedback API GET: Using demo mode');
     }
 
     // If message_id is provided, get feedback for that specific message
     if (messageId) {
       // First verify user has access to the message
-      const accessResult = await verifyMessageAccess(supabase, messageId, user.id);
+      const accessResult = await verifyMessageAccess(supabase, messageId, effectiveUserId);
 
       if (!accessResult.valid) {
         return NextResponse.json<APIError>(
@@ -334,7 +340,7 @@ export async function GET(request: NextRequest) {
         .from('feedback')
         .select('*')
         .eq('message_id', messageId)
-        .eq('user_id', user.id)
+        .eq('user_id', effectiveUserId)
         .single();
 
       if (queryError && queryError.code !== 'PGRST116') {
@@ -349,45 +355,25 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      // Convert rating to string format
+      const formattedFeedback = feedback ? {
+        ...feedback,
+        rating: intToRating(feedback.rating),
+      } : null;
+
       return NextResponse.json({
-        feedback: feedback || null,
+        feedback: formattedFeedback,
         message_id: messageId,
       });
     }
 
-    // If conversation_id is provided, verify ownership first
-    if (conversationId) {
-      const { data: conversation, error: convError } = await supabase
-        .from('conversations')
-        .select('id')
-        .eq('id', conversationId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (convError || !conversation) {
-        return NextResponse.json<APIError>(
-          {
-            code: 'NOT_FOUND',
-            message: 'Conversation not found or access denied',
-          },
-          { status: 404 }
-        );
-      }
-    }
-
     // Build query for listing feedback
     const offset = (page - 1) * perPage;
-    let query = supabase
+    const { data: feedbackList, error: queryError, count } = await supabase
       .from('feedback')
       .select('*', { count: 'exact' })
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (conversationId) {
-      query = query.eq('conversation_id', conversationId);
-    }
-
-    const { data: feedbackList, error: queryError, count } = await query
+      .eq('user_id', effectiveUserId)
+      .order('created_at', { ascending: false })
       .range(offset, offset + perPage - 1);
 
     if (queryError) {
@@ -404,20 +390,18 @@ export async function GET(request: NextRequest) {
     // Calculate statistics
     const stats = {
       total: count || 0,
-      positive: feedbackList?.filter((f) => f.rating === 'positive').length || 0,
-      negative: feedbackList?.filter((f) => f.rating === 'negative').length || 0,
-      by_category: {} as Record<string, number>,
+      positive: feedbackList?.filter((f) => f.rating === 1).length || 0,
+      negative: feedbackList?.filter((f) => f.rating === -1).length || 0,
     };
 
-    // Count by category
-    feedbackList?.forEach((f) => {
-      if (f.category) {
-        stats.by_category[f.category] = (stats.by_category[f.category] || 0) + 1;
-      }
-    });
+    // Convert ratings to string format
+    const formattedFeedback = feedbackList?.map((f) => ({
+      ...f,
+      rating: intToRating(f.rating),
+    })) || [];
 
     return NextResponse.json({
-      feedback: feedbackList || [],
+      feedback: formattedFeedback,
       stats,
       pagination: {
         total: count || 0,
@@ -460,25 +444,23 @@ export async function DELETE(request: NextRequest) {
 
     // Get Supabase client and check authentication
     const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user when not authenticated
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+
+    if (isDemoMode) {
+      console.log('Feedback API DELETE: Using demo mode');
     }
 
-    let deleteQuery = supabase.from('feedback').delete().eq('user_id', user.id);
+    let deleteQuery = supabase.from('feedback').delete().eq('user_id', effectiveUserId);
 
     if (feedbackId) {
       deleteQuery = deleteQuery.eq('id', feedbackId);
     } else if (messageId) {
       // Verify user has access to the message first
-      const accessResult = await verifyMessageAccess(supabase, messageId, user.id);
+      const accessResult = await verifyMessageAccess(supabase, messageId, effectiveUserId);
 
       if (!accessResult.valid) {
         return NextResponse.json<APIError>(

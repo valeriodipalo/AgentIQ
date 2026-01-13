@@ -1,9 +1,6 @@
 /**
  * Database types for Supabase
- * These types should be generated from your Supabase schema
- * Run: npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/types/database.ts
- *
- * For now, this is a placeholder with expected table structures
+ * Auto-generated from Supabase schema - 2026-01-13
  */
 
 export type Json =
@@ -12,363 +9,457 @@ export type Json =
   | boolean
   | null
   | { [key: string]: Json | undefined }
-  | Json[];
+  | Json[]
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
-      tenants: {
+      chatbots: {
         Row: {
-          id: string;
-          slug: string;
-          name: string;
-          settings: Json;
-          created_at: string;
-          updated_at: string;
-        };
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          is_published: boolean
+          max_tokens: number
+          model: string
+          name: string
+          settings: Json | null
+          system_prompt: string
+          temperature: number
+          tenant_id: string
+          updated_at: string
+        }
         Insert: {
-          id?: string;
-          slug: string;
-          name: string;
-          settings?: Json;
-          created_at?: string;
-          updated_at?: string;
-        };
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          is_published?: boolean
+          max_tokens?: number
+          model?: string
+          name: string
+          settings?: Json | null
+          system_prompt: string
+          temperature?: number
+          tenant_id: string
+          updated_at?: string
+        }
         Update: {
-          id?: string;
-          slug?: string;
-          name?: string;
-          settings?: Json;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      users: {
-        Row: {
-          id: string;
-          tenant_id: string;
-          email: string;
-          name: string;
-          role: string;
-          avatar_url: string | null;
-          metadata: Json;
-          created_at: string;
-          updated_at: string;
-          last_login_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          tenant_id: string;
-          email: string;
-          name: string;
-          role?: string;
-          avatar_url?: string | null;
-          metadata?: Json;
-          created_at?: string;
-          updated_at?: string;
-          last_login_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          tenant_id?: string;
-          email?: string;
-          name?: string;
-          role?: string;
-          avatar_url?: string | null;
-          metadata?: Json;
-          created_at?: string;
-          updated_at?: string;
-          last_login_at?: string | null;
-        };
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_published?: boolean
+          max_tokens?: number
+          model?: string
+          name?: string
+          settings?: Json | null
+          system_prompt?: string
+          temperature?: number
+          tenant_id?: string
+          updated_at?: string
+        }
         Relationships: [
           {
-            foreignKeyName: 'users_tenant_id_fkey';
-            columns: ['tenant_id'];
-            referencedRelation: 'tenants';
-            referencedColumns: ['id'];
-          }
-        ];
-      };
+            foreignKeyName: "fk_chatbots_created_by"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_chatbots_tenant"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
-          id: string;
-          tenant_id: string;
-          user_id: string;
-          title: string;
-          summary: string | null;
-          status: string;
-          metadata: Json;
-          created_at: string;
-          updated_at: string;
-        };
+          chatbot_id: string | null
+          created_at: string
+          id: string
+          is_archived: boolean
+          metadata: Json | null
+          tenant_id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
         Insert: {
-          id?: string;
-          tenant_id: string;
-          user_id: string;
-          title: string;
-          summary?: string | null;
-          status?: string;
-          metadata?: Json;
-          created_at?: string;
-          updated_at?: string;
-        };
+          chatbot_id?: string | null
+          created_at?: string
+          id?: string
+          is_archived?: boolean
+          metadata?: Json | null
+          tenant_id: string
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
         Update: {
-          id?: string;
-          tenant_id?: string;
-          user_id?: string;
-          title?: string;
-          summary?: string | null;
-          status?: string;
-          metadata?: Json;
-          created_at?: string;
-          updated_at?: string;
-        };
+          chatbot_id?: string | null
+          created_at?: string
+          id?: string
+          is_archived?: boolean
+          metadata?: Json | null
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: 'conversations_tenant_id_fkey';
-            columns: ['tenant_id'];
-            referencedRelation: 'tenants';
-            referencedColumns: ['id'];
+            foreignKeyName: "fk_conversations_chatbot"
+            columns: ["chatbot_id"]
+            isOneToOne: false
+            referencedRelation: "chatbots"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'conversations_user_id_fkey';
-            columns: ['user_id'];
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-          }
-        ];
-      };
-      messages: {
-        Row: {
-          id: string;
-          conversation_id: string;
-          role: string;
-          content: string;
-          metadata: Json;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          conversation_id: string;
-          role: string;
-          content: string;
-          metadata?: Json;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          conversation_id?: string;
-          role?: string;
-          content?: string;
-          metadata?: Json;
-          created_at?: string;
-        };
-        Relationships: [
+            foreignKeyName: "fk_conversations_tenant"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
           {
-            foreignKeyName: 'messages_conversation_id_fkey';
-            columns: ['conversation_id'];
-            referencedRelation: 'conversations';
-            referencedColumns: ['id'];
-          }
-        ];
-      };
+            foreignKeyName: "fk_conversations_user"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feedback: {
         Row: {
-          id: string;
-          message_id: string;
-          conversation_id: string;
-          user_id: string;
-          tenant_id: string;
-          rating: string;
-          comment: string | null;
-          category: string | null;
-          metadata: Json;
-          created_at: string;
-        };
+          created_at: string
+          id: string
+          message_id: string
+          notes: string | null
+          rating: number
+          user_id: string
+        }
         Insert: {
-          id?: string;
-          message_id: string;
-          conversation_id: string;
-          user_id: string;
-          tenant_id: string;
-          rating: string;
-          comment?: string | null;
-          category?: string | null;
-          metadata?: Json;
-          created_at?: string;
-        };
+          created_at?: string
+          id?: string
+          message_id: string
+          notes?: string | null
+          rating: number
+          user_id: string
+        }
         Update: {
-          id?: string;
-          message_id?: string;
-          conversation_id?: string;
-          user_id?: string;
-          tenant_id?: string;
-          rating?: string;
-          comment?: string | null;
-          category?: string | null;
-          metadata?: Json;
-          created_at?: string;
-        };
+          created_at?: string
+          id?: string
+          message_id?: string
+          notes?: string | null
+          rating?: number
+          user_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: 'feedback_message_id_fkey';
-            columns: ['message_id'];
-            referencedRelation: 'messages';
-            referencedColumns: ['id'];
+            foreignKeyName: "fk_feedback_message"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'feedback_conversation_id_fkey';
-            columns: ['conversation_id'];
-            referencedRelation: 'conversations';
-            referencedColumns: ['id'];
+            foreignKeyName: "fk_feedback_user"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: 'feedback_user_id_fkey';
-            columns: ['user_id'];
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'feedback_tenant_id_fkey';
-            columns: ['tenant_id'];
-            referencedRelation: 'tenants';
-            referencedColumns: ['id'];
-          }
-        ];
-      };
-      usage_metrics: {
+        ]
+      }
+      invite_codes: {
         Row: {
-          id: string;
-          tenant_id: string;
-          user_id: string;
-          date: string;
-          model: string;
-          prompt_tokens: number;
-          completion_tokens: number;
-          total_tokens: number;
-          request_count: number;
-          estimated_cost: number;
-          created_at: string;
-          updated_at: string;
-        };
+          code: string
+          created_at: string | null
+          created_by: string | null
+          current_uses: number | null
+          expires_at: string | null
+          id: string
+          is_active: boolean | null
+          max_uses: number | null
+          notes: string | null
+          tenant_id: string
+          updated_at: string | null
+        }
         Insert: {
-          id?: string;
-          tenant_id: string;
-          user_id: string;
-          date: string;
-          model: string;
-          prompt_tokens?: number;
-          completion_tokens?: number;
-          total_tokens?: number;
-          request_count?: number;
-          estimated_cost?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
+          code: string
+          created_at?: string | null
+          created_by?: string | null
+          current_uses?: number | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_uses?: number | null
+          notes?: string | null
+          tenant_id: string
+          updated_at?: string | null
+        }
         Update: {
-          id?: string;
-          tenant_id?: string;
-          user_id?: string;
-          date?: string;
-          model?: string;
-          prompt_tokens?: number;
-          completion_tokens?: number;
-          total_tokens?: number;
-          request_count?: number;
-          estimated_cost?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
+          code?: string
+          created_at?: string | null
+          created_by?: string | null
+          current_uses?: number | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_uses?: number | null
+          notes?: string | null
+          tenant_id?: string
+          updated_at?: string | null
+        }
         Relationships: [
           {
-            foreignKeyName: 'usage_metrics_tenant_id_fkey';
-            columns: ['tenant_id'];
-            referencedRelation: 'tenants';
-            referencedColumns: ['id'];
+            foreignKeyName: "invite_codes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'usage_metrics_user_id_fkey';
-            columns: ['user_id'];
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-          }
-        ];
-      };
-    };
+            foreignKeyName: "invite_codes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invite_redemptions: {
+        Row: {
+          id: string
+          invite_code_id: string
+          redeemed_at: string | null
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          invite_code_id: string
+          redeemed_at?: string | null
+          user_id: string
+        }
+        Update: {
+          id?: string
+          invite_code_id?: string
+          redeemed_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invite_redemptions_invite_code_id_fkey"
+            columns: ["invite_code_id"]
+            isOneToOne: false
+            referencedRelation: "invite_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invite_redemptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          latency_ms: number | null
+          metadata: Json | null
+          model_used: string | null
+          role: string
+          token_count: number | null
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          latency_ms?: number | null
+          metadata?: Json | null
+          model_used?: string | null
+          role: string
+          token_count?: number | null
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          latency_ms?: number | null
+          metadata?: Json | null
+          model_used?: string | null
+          role?: string
+          token_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_messages_conversation"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          branding: Json | null
+          created_at: string | null
+          daily_token_limit: number | null
+          features: Json | null
+          id: string
+          is_active: boolean | null
+          llm_model: string | null
+          llm_provider: string | null
+          max_tokens: number | null
+          name: string
+          rate_limit_per_minute: number | null
+          slug: string
+          system_prompt: string | null
+          temperature: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          branding?: Json | null
+          created_at?: string | null
+          daily_token_limit?: number | null
+          features?: Json | null
+          id?: string
+          is_active?: boolean | null
+          llm_model?: string | null
+          llm_provider?: string | null
+          max_tokens?: number | null
+          name: string
+          rate_limit_per_minute?: number | null
+          slug: string
+          system_prompt?: string | null
+          temperature?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          branding?: Json | null
+          created_at?: string | null
+          daily_token_limit?: number | null
+          features?: Json | null
+          id?: string
+          is_active?: boolean | null
+          llm_model?: string | null
+          llm_provider?: string | null
+          max_tokens?: number | null
+          name?: string
+          rate_limit_per_minute?: number | null
+          slug?: string
+          system_prompt?: string | null
+          temperature?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      users: {
+        Row: {
+          auth_id: string | null
+          created_at: string | null
+          email: string
+          id: string
+          invited_via: string | null
+          is_active: boolean | null
+          last_active_at: string | null
+          name: string | null
+          preferences: Json | null
+          role: string | null
+          tenant_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          auth_id?: string | null
+          created_at?: string | null
+          email: string
+          id?: string
+          invited_via?: string | null
+          is_active?: boolean | null
+          last_active_at?: string | null
+          name?: string | null
+          preferences?: Json | null
+          role?: string | null
+          tenant_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          auth_id?: string | null
+          created_at?: string | null
+          email?: string
+          id?: string
+          invited_via?: string | null
+          is_active?: boolean | null
+          last_active_at?: string | null
+          name?: string | null
+          preferences?: Json | null
+          role?: string | null
+          tenant_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "users_invited_via_fkey"
+            columns: ["invited_via"]
+            isOneToOne: false
+            referencedRelation: "invite_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "users_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
     Views: {
-      [_ in never]: never;
-    };
+      [_ in never]: never
+    }
     Functions: {
-      increment_usage_metrics: {
-        Args: {
-          p_tenant_id: string;
-          p_user_id: string;
-          p_prompt_tokens: number;
-          p_completion_tokens: number;
-          p_model: string;
-          p_estimated_cost: number;
-        };
-        Returns: void;
-      };
-      get_user_daily_usage: {
-        Args: {
-          p_user_id: string;
-          p_start_date: string;
-          p_end_date: string;
-        };
-        Returns: Array<{
-          date: string;
-          model: string;
-          prompt_tokens: number;
-          completion_tokens: number;
-          total_tokens: number;
-          request_count: number;
-          estimated_cost: number;
-        }>;
-      };
-      get_tenant_usage_summary: {
-        Args: {
-          p_tenant_id: string;
-          p_start_date: string;
-          p_end_date: string;
-        };
-        Returns: Array<{
-          user_id: string;
-          model: string;
-          total_prompt_tokens: number;
-          total_completion_tokens: number;
-          total_tokens: number;
-          total_requests: number;
-          total_cost: number;
-        }>;
-      };
-    };
+      [_ in never]: never
+    }
     Enums: {
-      user_role: 'admin' | 'member' | 'guest';
-      conversation_status: 'active' | 'archived' | 'deleted';
-      message_role: 'user' | 'assistant' | 'system';
-      feedback_rating: 'positive' | 'negative';
-    };
+      [_ in never]: never
+    }
     CompositeTypes: {
-      [_ in never]: never;
-    };
-  };
+      [_ in never]: never
+    }
+  }
 }
 
 // Helper types for easier access
 export type Tables<T extends keyof Database['public']['Tables']> =
-  Database['public']['Tables'][T]['Row'];
+  Database['public']['Tables'][T]['Row']
 
 export type InsertTables<T extends keyof Database['public']['Tables']> =
-  Database['public']['Tables'][T]['Insert'];
+  Database['public']['Tables'][T]['Insert']
 
 export type UpdateTables<T extends keyof Database['public']['Tables']> =
-  Database['public']['Tables'][T]['Update'];
+  Database['public']['Tables'][T]['Update']
 
 // Convenience type aliases
-export type TenantRow = Tables<'tenants'>;
-export type UserRow = Tables<'users'>;
-export type ConversationRow = Tables<'conversations'>;
-export type MessageRow = Tables<'messages'>;
-export type FeedbackRow = Tables<'feedback'>;
+export type TenantRow = Tables<'tenants'>
+export type UserRow = Tables<'users'>
+export type ConversationRow = Tables<'conversations'>
+export type MessageRow = Tables<'messages'>
+export type FeedbackRow = Tables<'feedback'>
+export type ChatbotRow = Tables<'chatbots'>
+export type InviteCodeRow = Tables<'invite_codes'>
+export type InviteRedemptionRow = Tables<'invite_redemptions'>

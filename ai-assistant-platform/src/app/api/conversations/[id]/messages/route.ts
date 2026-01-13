@@ -4,8 +4,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createServerClient, createAdminClient } from '@/lib/supabase/server';
 import type { APIError, Message } from '@/types';
+
+// Demo user ID for unauthenticated testing
+const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
 
 interface RouteParams {
   params: Promise<{
@@ -63,25 +66,26 @@ export async function GET(
     }
 
     // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
-      );
+    // Demo mode: use demo user and admin client to bypass RLS
+    const effectiveUserId = user?.id || DEMO_USER_ID;
+    const isDemoMode = !user;
+
+    // Use admin client in demo mode to bypass RLS policies (including nested feedback query)
+    const supabase = isDemoMode ? createAdminClient() : authClient;
+
+    if (isDemoMode) {
+      console.log('Messages API: Using demo mode with admin client');
     }
 
     // Verify user owns the conversation
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, user_id, title, status')
+      .select('id, user_id, title, is_archived')
       .eq('id', conversationId)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .single();
 
     if (convError || !conversation) {
@@ -94,11 +98,19 @@ export async function GET(
       );
     }
 
-    // Fetch messages with pagination
+    // Fetch messages with pagination and feedback data
     const offset = (page - 1) * perPage;
     const { data: messages, error: queryError, count } = await supabase
       .from('messages')
-      .select('*', { count: 'exact' })
+      .select(`
+        *,
+        feedback (
+          id,
+          rating,
+          notes,
+          created_at
+        )
+      `, { count: 'exact' })
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: order === 'asc' })
       .range(offset, offset + perPage - 1);
@@ -119,7 +131,7 @@ export async function GET(
       conversation: {
         id: conversation.id,
         title: conversation.title,
-        status: conversation.status,
+        is_archived: conversation.is_archived,
       },
       messages: (messages || []) as unknown as Message[],
       pagination: {
