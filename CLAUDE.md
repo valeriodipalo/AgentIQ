@@ -2,6 +2,39 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+## ⚠️ PRIORITY TASK - DELETE THIS SECTION WHEN COMPLETED ⚠️
+
+**Task:** Verify Production API Data Retrieval Fix (from session 2026-01-13)
+
+**Context:** RLS bypass fix was deployed (commit `1b6317c`) but verification was not completed.
+
+**Steps to Execute:**
+1. Test API endpoints directly:
+   ```bash
+   curl -s https://agent-iq-rose.vercel.app/api/chatbots | head -100
+   curl -s https://agent-iq-rose.vercel.app/api/conversations | head -100
+   ```
+
+2. If APIs return empty or error:
+   - Check Vercel function logs for errors
+   - Verify `SUPABASE_SERVICE_ROLE_KEY` is set in Vercel environment variables
+   - Check if `createAdminClient()` is working correctly
+
+3. If APIs return data successfully:
+   - Test the full user flow: landing page → invite code → workspace
+   - Confirm chatbots and conversations display correctly
+
+4. **DELETE THIS ENTIRE SECTION** from CLAUDE.md once verified working
+
+**Files Changed in Fix:**
+- `src/app/api/chatbots/route.ts` - Added admin client for demo mode
+- `src/app/api/chatbots/[id]/route.ts` - New route created
+- `src/app/api/conversations/route.ts` - Added admin client for all methods
+- `src/app/api/companies/[id]/chatbots/route.ts` - Removed invalid `avatar_url` column
+
+---
+
 ## Development Workflow Rules
 
 **Before implementing any new feature or functionality:**
