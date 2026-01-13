@@ -1,8 +1,12 @@
 {
   "mcpServers": {
+    "vercel-agent-iq": {
+      "type": "http",
+      "url": "https://mcp.vercel.com/valerios-projects-fd08f650/agent-iq"
+    },
     "supabase": {
       "type": "http",
-      "url": "https://mcp.supabase.com/mcp"
+      "url": "https://mcp.supabase.com/mcp?project_ref=lcflejsnwhvmpkkzkuqp"
     }
   }
 }
