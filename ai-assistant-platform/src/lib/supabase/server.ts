@@ -1,0 +1,109 @@
+/**
+ * Supabase Server Client
+ * For use in Server Components, API Routes, and Server Actions
+ */
+
+import { createServerClient as createSupabaseServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import type { Database } from '@/types/database';
+
+/**
+ * Creates a Supabase client for server-side usage
+ * Uses cookies for session management in App Router
+ */
+export async function createServerClient() {
+  const cookieStore = await cookies();
+
+  return createSupabaseServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
+        },
+      },
+    }
+  );
+}
+
+/**
+ * Creates a Supabase admin client with service role key
+ * ONLY use this for admin operations that bypass RLS
+ * Never expose this client to the browser
+ */
+export function createAdminClient() {
+  if (typeof window !== 'undefined') {
+    throw new Error(
+      'createAdminClient() should never be called in browser context.'
+    );
+  }
+
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!serviceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for admin operations');
+  }
+
+  return createSupabaseServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serviceRoleKey,
+    {
+      cookies: {
+        getAll() {
+          return [];
+        },
+        setAll() {
+          // Admin client doesn't use cookies
+        },
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+}
+
+/**
+ * Helper to get current user from server context
+ */
+export async function getCurrentUser() {
+  const supabase = await createServerClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return null;
+  }
+
+  return user;
+}
+
+/**
+ * Helper to get current session from server context
+ */
+export async function getCurrentSession() {
+  const supabase = await createServerClient();
+  const { data: { session }, error } = await supabase.auth.getSession();
+
+  if (error || !session) {
+    return null;
+  }
+
+  return session;
+}
+
+// Type aliases for convenience
+export type SupabaseServerClient = Awaited<ReturnType<typeof createServerClient>>;
+export type SupabaseAdminClient = ReturnType<typeof createAdminClient>;

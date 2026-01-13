@@ -1,0 +1,44 @@
+{
+  "tenant": {
+    "id": "default",
+    "name": "Default Tenant",
+    "slug": "default"
+  },
+  "branding": {
+    "primaryColor": "#18181b",
+    "accentColor": "#3b82f6",
+    "logoUrl": null,
+    "faviconUrl": null,
+    "companyName": "AI Assistant Platform"
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4-turbo-preview",
+    "temperature": 0.7,
+    "maxTokens": 4096,
+    "systemPrompt": "You are a helpful AI assistant for corporate users. You provide clear, accurate, and professional responses. Be concise but thorough. If you're unsure about something, say so rather than making assumptions."
+  },
+  "features": {
+    "streaming": true,
+    "conversationHistory": true,
+    "feedback": true,
+    "fileUploads": false,
+    "codeExecution": false,
+    "webSearch": false
+  },
+  "limits": {
+    "rateLimit": {
+      "requestsPerMinute": 20,
+      "tokensPerDay": 100000
+    },
+    "conversation": {
+      "maxMessages": 100,
+      "maxMessageLength": 10000
+    }
+  },
+  "ui": {
+    "welcomeMessage": "Hello! How can I assist you today?",
+    "placeholderText": "Type your message...",
+    "showPoweredBy": true
+  }
+}
