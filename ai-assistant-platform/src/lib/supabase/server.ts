@@ -4,6 +4,7 @@
  */
 
 import { createServerClient as createSupabaseServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import type { Database } from '@/types/database';
 
@@ -42,6 +43,9 @@ export async function createServerClient() {
  * Creates a Supabase admin client with service role key
  * ONLY use this for admin operations that bypass RLS
  * Never expose this client to the browser
+ *
+ * Uses @supabase/supabase-js directly instead of @supabase/ssr
+ * to avoid cookie handling overhead and potential blocking issues
  */
 export function createAdminClient() {
   if (typeof window !== 'undefined') {
@@ -50,30 +54,25 @@ export function createAdminClient() {
     );
   }
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is required');
+  }
 
   if (!serviceRoleKey) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for admin operations');
   }
 
-  return createSupabaseServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceRoleKey,
-    {
-      cookies: {
-        getAll() {
-          return [];
-        },
-        setAll() {
-          // Admin client doesn't use cookies
-        },
-      },
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    }
-  );
+  // Use createClient directly from @supabase/supabase-js
+  // This is simpler and doesn't have cookie/SSR overhead
+  return createClient<Database>(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
 /**
