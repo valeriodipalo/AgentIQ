@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { config } from '@/lib/config';
 import type { APIError, Conversation, ConversationListResponse, ConversationMetadata } from '@/types';
 
@@ -18,27 +18,6 @@ const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001';
 interface ConversationWithPreview extends Conversation {
   last_message_preview?: string;
   last_message_at?: string;
-}
-
-/**
- * Get user's tenant ID from their profile
- */
-async function getUserTenantId(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  userId: string
-): Promise<string | null> {
-  const { data: userProfile, error } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', userId)
-    .single();
-
-  if (error || !userProfile) {
-    console.warn('User profile not found');
-    return null;
-  }
-
-  return userProfile.tenant_id;
 }
 
 /**
@@ -65,19 +44,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo user when not authenticated
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-    // Use admin client in demo mode to bypass RLS
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Conversations API: Using demo mode with admin client');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        {
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
+        },
+        { status: 500 }
+      );
     }
+
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Conversations API: Using admin client with demo user');
 
     // Query conversations with count
     const offset = (page - 1) * perPage;
@@ -170,34 +154,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { title, model, metadata: customMetadata } = body;
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo user/tenant when not authenticated
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-    // Use admin client in demo mode to bypass RLS
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    // Get tenant ID from user profile or use demo tenant
-    let tenantId: string | null = null;
-    if (user) {
-      tenantId = await getUserTenantId(supabase, user.id);
-    } else {
-      tenantId = DEMO_TENANT_ID;
-      console.log('Conversations API POST: Using demo mode with admin client');
-    }
-
-    if (!tenantId) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
         {
-          code: 'VALIDATION_ERROR',
-          message: 'User tenant not configured',
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
+
+    const effectiveUserId = DEMO_USER_ID;
+    const tenantId = DEMO_TENANT_ID;
+    console.log('Conversations API POST: Using admin client with demo user');
 
     // Validate title length if provided
     if (title && title.length > 255) {
@@ -283,19 +258,24 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo user when not authenticated
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-    // Use admin client in demo mode to bypass RLS
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Conversations API PATCH: Using demo mode with admin client');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        {
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
+        },
+        { status: 500 }
+      );
     }
+
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Conversations API PATCH: Using admin client with demo user');
 
     // Verify conversation belongs to user
     const { data: existing, error: fetchError } = await supabase
@@ -400,19 +380,24 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo user when not authenticated
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-    // Use admin client in demo mode to bypass RLS
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Conversations API DELETE: Using demo mode with admin client');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        {
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
+        },
+        { status: 500 }
+      );
     }
+
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Conversations API DELETE: Using admin client with demo user');
 
     // Count how many conversations actually belong to the user
     const { count: existingCount, error: countError } = await supabase

@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 // Demo mode constants
@@ -19,27 +19,6 @@ interface PublicChatbot {
   description: string | null;
   model: string;
   created_at: string;
-}
-
-/**
- * Get user's tenant ID from their profile
- */
-async function getUserTenantId(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  userId: string
-): Promise<string | null> {
-  const { data: userProfile, error } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', userId)
-    .single();
-
-  if (error || !userProfile) {
-    console.warn('User profile not found');
-    return null;
-  }
-
-  return userProfile.tenant_id;
 }
 
 /**
@@ -65,32 +44,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo tenant when not authenticated
-    const isDemoMode = !user;
-    // Use admin client in demo mode to bypass RLS
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-    let tenantId: string | null = null;
-
-    if (user) {
-      tenantId = await getUserTenantId(supabase, user.id);
-    } else {
-      tenantId = DEMO_TENANT_ID;
-      console.log('Public chatbots API: Using demo mode with admin client');
-    }
-
-    if (!tenantId) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
         {
-          code: 'VALIDATION_ERROR',
-          message: 'User tenant not configured',
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
+
+    const tenantId = DEMO_TENANT_ID;
+    console.log('Public chatbots API: Using admin client with demo tenant');
 
     // Build query - only select published chatbots and public fields
     const offset = (page - 1) * perPage;
@@ -138,7 +109,7 @@ export async function GET(request: NextRequest) {
         per_page: perPage,
         has_more: (count || 0) > offset + perPage,
       },
-      demo_mode: isDemoMode,
+      demo_mode: true,
     });
   } catch (error) {
     console.error('Public chatbots API error:', error);
