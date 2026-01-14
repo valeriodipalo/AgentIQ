@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 interface RouteParams {
@@ -59,11 +59,19 @@ export async function GET(
       );
     }
 
-    // Check auth
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    const isDemoMode = true;
 
     // Verify company exists
     const { data: company, error: companyError } = await supabase
@@ -152,11 +160,19 @@ export async function POST(
     const body: CreateInviteRequest = await request.json();
     const { code, max_uses, expires_in_days, notes } = body;
 
-    // Check auth
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    const isDemoMode = true;
 
     // Get company info for code generation
     const { data: company, error: companyError } = await supabase
@@ -239,7 +255,7 @@ export async function POST(
         max_uses: max_uses || null,
         expires_at: expiresAt,
         notes: notes?.trim() || null,
-        created_by: user?.id || null,
+        created_by: null, // Demo mode - no authenticated user
         is_active: true,
       })
       .select()

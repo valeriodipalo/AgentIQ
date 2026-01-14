@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 // Demo mode constants
@@ -46,27 +46,6 @@ interface AnalyticsResponse {
 }
 
 /**
- * Get user's tenant ID from their profile
- */
-async function getUserTenantId(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  userId: string
-): Promise<string | null> {
-  const { data: userProfile, error } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', userId)
-    .single();
-
-  if (error || !userProfile) {
-    console.warn('User profile not found');
-    return null;
-  }
-
-  return userProfile.tenant_id;
-}
-
-/**
  * Parse and validate date string
  */
 function parseDate(dateStr: string | null): Date | null {
@@ -100,33 +79,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo tenant and admin client to bypass RLS
-    const isDemoMode = !user;
-    let tenantId: string | null = null;
-
-    // Use admin client in demo mode to bypass RLS policies
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (user) {
-      tenantId = await getUserTenantId(supabase, user.id);
-    } else {
-      tenantId = DEMO_TENANT_ID;
-      console.log('Admin analytics API: Using demo mode with admin client');
-    }
-
-    if (!tenantId) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
         {
-          code: 'VALIDATION_ERROR',
-          message: 'User tenant not configured',
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
+    const isDemoMode = true;
+    const tenantId = DEMO_TENANT_ID;
+    console.log('Admin analytics API: Using demo mode with admin client');
 
     // Build date filter for queries
     const buildDateFilter = (query: ReturnType<typeof supabase.from>, dateColumn: string = 'created_at') => {

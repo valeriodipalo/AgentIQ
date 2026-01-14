@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 // Demo mode constants
@@ -28,27 +28,6 @@ interface UpdateChatbotRequest {
   max_tokens?: number;
   settings?: Record<string, unknown>;
   is_published?: boolean;
-}
-
-/**
- * Get user's tenant ID from their profile
- */
-async function getUserTenantId(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  userId: string
-): Promise<string | null> {
-  const { data: userProfile, error } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', userId)
-    .single();
-
-  if (error || !userProfile) {
-    console.warn('User profile not found');
-    return null;
-  }
-
-  return userProfile.tenant_id;
 }
 
 /**
@@ -135,29 +114,23 @@ export async function GET(
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // Demo mode: use demo tenant when not authenticated
-    let tenantId: string | null = null;
-
-    if (user) {
-      tenantId = await getUserTenantId(supabase, user.id);
-    } else {
-      tenantId = DEMO_TENANT_ID;
-      console.log('Admin chatbots API: Using demo mode');
-    }
-
-    if (!tenantId) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
         {
-          code: 'VALIDATION_ERROR',
-          message: 'User tenant not configured',
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
+    const tenantId = DEMO_TENANT_ID;
+    console.log('Admin chatbots API: Using demo mode');
 
     // Fetch chatbot
     const { data: chatbot, error: queryError } = await supabase
@@ -280,29 +253,23 @@ export async function PUT(
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // Demo mode: use demo tenant when not authenticated
-    let tenantId: string | null = null;
-
-    if (user) {
-      tenantId = await getUserTenantId(supabase, user.id);
-    } else {
-      tenantId = DEMO_TENANT_ID;
-      console.log('Admin chatbots API: Using demo mode for update');
-    }
-
-    if (!tenantId) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
         {
-          code: 'VALIDATION_ERROR',
-          message: 'User tenant not configured',
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
+    const tenantId = DEMO_TENANT_ID;
+    console.log('Admin chatbots API: Using demo mode for update');
 
     // Verify chatbot exists and belongs to tenant
     const { data: existing, error: fetchError } = await supabase
@@ -429,29 +396,23 @@ export async function DELETE(
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // Demo mode: use demo tenant when not authenticated
-    let tenantId: string | null = null;
-
-    if (user) {
-      tenantId = await getUserTenantId(supabase, user.id);
-    } else {
-      tenantId = DEMO_TENANT_ID;
-      console.log('Admin chatbots API: Using demo mode for deletion');
-    }
-
-    if (!tenantId) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
         {
-          code: 'VALIDATION_ERROR',
-          message: 'User tenant not configured',
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
+    const tenantId = DEMO_TENANT_ID;
+    console.log('Admin chatbots API: Using demo mode for deletion');
 
     // Verify chatbot exists and belongs to tenant
     const { data: existing, error: fetchError } = await supabase

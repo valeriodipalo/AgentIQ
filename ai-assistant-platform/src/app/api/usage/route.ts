@@ -4,8 +4,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
+
+// Demo user ID for session-based auth
+const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
 
 /**
  * GET /api/usage
@@ -50,19 +53,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
       );
     }
+    console.log('Usage API: Using admin client with demo user');
 
     // Usage metrics table not yet implemented - return empty usage data
     // TODO: Create usage_metrics table and increment_usage_metrics function

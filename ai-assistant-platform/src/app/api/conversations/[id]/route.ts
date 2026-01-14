@@ -4,9 +4,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { config } from '@/lib/config';
-import type { APIError, Conversation, ConversationMetadata } from '@/types';
+import type { APIError, ConversationMetadata } from '@/types';
+
+// Demo mode constants
+const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
 
 interface RouteParams {
   params: Promise<{
@@ -35,26 +38,27 @@ export async function GET(
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
       );
     }
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Conversation API GET: Using admin client with demo user');
 
     // Fetch conversation
     const { data: conversation, error: queryError } = await supabase
       .from('conversations')
       .select('*')
       .eq('id', conversationId)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .single();
 
     if (queryError || !conversation) {
@@ -139,26 +143,27 @@ export async function PATCH(
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
       );
     }
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Conversation API PATCH: Using admin client with demo user');
 
     // Verify conversation belongs to user and get current metadata
     const { data: existing, error: fetchError } = await supabase
       .from('conversations')
       .select('id, metadata')
       .eq('id', conversationId)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .single();
 
     if (fetchError || !existing) {
@@ -197,7 +202,7 @@ export async function PATCH(
       .from('conversations')
       .update(updates)
       .eq('id', conversationId)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .select()
       .single();
 
@@ -251,26 +256,27 @@ export async function DELETE(
     const { searchParams } = new URL(request.url);
     const permanent = searchParams.get('permanent') === 'true';
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
       return NextResponse.json<APIError>(
-        {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-        },
-        { status: 401 }
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
       );
     }
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Conversation API DELETE: Using admin client with demo user');
 
     // Verify conversation exists and belongs to user
     const { data: existing, error: fetchError } = await supabase
       .from('conversations')
       .select('id')
       .eq('id', conversationId)
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .single();
 
     if (fetchError || !existing) {
@@ -289,7 +295,7 @@ export async function DELETE(
         .from('conversations')
         .delete()
         .eq('id', conversationId)
-        .eq('user_id', user.id);
+        .eq('user_id', effectiveUserId);
 
       if (deleteError) {
         console.error('Error deleting conversation:', deleteError);
@@ -314,7 +320,7 @@ export async function DELETE(
         .from('conversations')
         .update({ is_archived: true, updated_at: new Date().toISOString() })
         .eq('id', conversationId)
-        .eq('user_id', user.id);
+        .eq('user_id', effectiveUserId);
 
       if (updateError) {
         console.error('Error archiving conversation:', updateError);

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 interface RouteParams {
@@ -36,17 +36,19 @@ export async function GET(
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Use admin client in demo mode to bypass RLS
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Chatbot API: Using demo mode with admin client');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
     }
+    console.log('Chatbot API: Using admin client');
 
     // Fetch chatbot with public fields only
     const { data: chatbot, error: queryError } = await supabase

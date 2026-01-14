@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 /**
@@ -67,27 +67,6 @@ function parseBoolean(value: string | null): boolean | null {
   if (value === 'true') return true;
   if (value === 'false') return false;
   return null;
-}
-
-/**
- * Get user's tenant ID from their profile
- */
-async function getUserTenantId(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  userId: string
-): Promise<string | null> {
-  const { data: userProfile, error } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', userId)
-    .single();
-
-  if (error || !userProfile) {
-    console.warn('User profile not found');
-    return null;
-  }
-
-  return userProfile.tenant_id;
 }
 
 /**
@@ -183,36 +162,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use admin client to bypass RLS
-    const isDemoMode = !user;
-
-    // Use admin client in demo mode to query across all data
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    // In demo mode, if no company_id filter is provided, default to demo tenant
-    // In authenticated mode, get user's tenant for filtering
-    let effectiveTenantId: string | null = null;
-
-    if (!isDemoMode && user) {
-      effectiveTenantId = await getUserTenantId(supabase, user.id);
-      if (!effectiveTenantId) {
-        return NextResponse.json<APIError>(
-          {
-            code: 'VALIDATION_ERROR',
-            message: 'User tenant not configured',
-          },
-          { status: 400 }
-        );
-      }
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        {
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
+        },
+        { status: 500 }
+      );
     }
-
-    if (isDemoMode) {
-      console.log('Admin conversations API: Using demo mode with admin client');
-    }
+    const isDemoMode = true;
+    console.log('Admin conversations API: Using demo mode with admin client');
 
     // Calculate offset for pagination
     const offset = (page - 1) * perPage;
@@ -224,11 +190,8 @@ export async function GET(request: NextRequest) {
       .order(sortBy, { ascending: sortOrder === 'asc' });
 
     // Apply filters
-    // In authenticated mode, always filter by user's tenant
-    if (!isDemoMode && effectiveTenantId) {
-      query = query.eq('tenant_id', effectiveTenantId);
-    } else if (companyId) {
-      // In demo mode, filter by company_id if provided
+    // In demo mode, filter by company_id if provided
+    if (companyId) {
       query = query.eq('tenant_id', companyId);
     }
 

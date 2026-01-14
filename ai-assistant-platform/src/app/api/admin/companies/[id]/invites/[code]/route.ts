@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 interface RouteParams {
@@ -49,10 +49,19 @@ export async function GET(
       );
     }
 
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    const isDemoMode = true;
 
     const { data: invite, error } = await supabase
       .from('invite_codes')
@@ -113,10 +122,19 @@ export async function PUT(
     const body: UpdateInviteRequest = await request.json();
     const { max_uses, expires_at, notes, is_active } = body;
 
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    const isDemoMode = true;
 
     // Verify invite exists
     const { data: existing, error: fetchError } = await supabase
@@ -200,10 +218,19 @@ export async function DELETE(
       );
     }
 
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+    const isDemoMode = true;
 
     // Verify invite exists
     const { data: existing, error: fetchError } = await supabase

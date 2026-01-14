@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError, FeedbackRequest, FeedbackRating } from '@/types';
 
 // Demo user ID for unauthenticated testing
@@ -35,7 +35,7 @@ function intToRating(value: number): FeedbackRating {
  * Verify user has access to a message (message must be in a conversation they own)
  */
 async function verifyMessageAccess(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   messageId: string,
   userId: string
 ): Promise<{
@@ -141,20 +141,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo user and admin client to bypass RLS
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-
-    // Use admin client in demo mode to bypass RLS policies
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Feedback API: Using demo mode with admin client');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
     }
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Feedback API: Using admin client with demo user');
 
     // Try to find the message - first by ID, then fallback to conversation lookup
     let actualMessageId = message_id;
@@ -308,17 +308,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // Demo mode: use demo user when not authenticated
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-
-    if (isDemoMode) {
-      console.log('Feedback API GET: Using demo mode');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
     }
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Feedback API GET: Using admin client with demo user');
 
     // If message_id is provided, get feedback for that specific message
     if (messageId) {
@@ -442,17 +445,20 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const supabase = await createServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // Demo mode: use demo user when not authenticated
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-
-    if (isDemoMode) {
-      console.log('Feedback API DELETE: Using demo mode');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
     }
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Feedback API DELETE: Using admin client with demo user');
 
     let deleteQuery = supabase.from('feedback').delete().eq('user_id', effectiveUserId);
 

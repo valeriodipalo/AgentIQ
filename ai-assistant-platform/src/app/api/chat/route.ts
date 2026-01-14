@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { config } from '@/lib/config';
 import type { ChatRequest, APIError, TenantSettings, Json, ChatbotSettings as ChatbotSettingsType, supportsReasoningParams } from '@/types';
 import { supportsReasoningParams as checkReasoningSupport } from '@/types';
@@ -43,7 +43,7 @@ function calculateEstimatedCost(
  * Load or create a conversation for the user
  */
 async function getOrCreateConversation(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   userId: string,
   tenantId: string,
   conversationId?: string,
@@ -97,7 +97,7 @@ async function getOrCreateConversation(
  * Load conversation history for context
  */
 async function loadConversationHistory(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   conversationId: string,
   maxMessages: number = config.ai.maxConversationMessages
 ): Promise<Array<{ role: 'user' | 'assistant' | 'system'; content: string }>> {
@@ -123,7 +123,7 @@ async function loadConversationHistory(
  * Save a message to the database
  */
 async function saveMessage(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   conversationId: string,
   role: 'user' | 'assistant',
   content: string,
@@ -152,7 +152,7 @@ async function saveMessage(
  * Update conversation metadata after message exchange
  */
 async function updateConversationMetadata(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   conversationId: string,
   tokensUsed: number,
   userMessage: string,
@@ -203,7 +203,7 @@ async function updateConversationMetadata(
  * Track usage metrics (placeholder - usage_metrics table not yet implemented)
  */
 async function trackUsageMetrics(
-  _supabase: Awaited<ReturnType<typeof createServerClient>>,
+  _supabase: ReturnType<typeof createAdminClient>,
   _tenantId: string,
   _userId: string,
   promptTokens: number,
@@ -226,7 +226,7 @@ async function trackUsageMetrics(
  * Load tenant-specific settings
  */
 async function loadTenantSettings(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   tenantId: string
 ): Promise<Partial<TenantSettings> | null> {
   const { data: tenant, error } = await supabase
@@ -267,7 +267,7 @@ interface ChatbotSettings {
  * Validates that the chatbot exists, is published, and belongs to the tenant
  */
 async function loadChatbotSettings(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   chatbotId: string,
   tenantId: string
 ): Promise<{ settings: ChatbotSettings | null; error: string | null }> {
@@ -311,7 +311,7 @@ async function loadChatbotSettings(
  * Get user's tenant ID from their profile
  */
 async function getUserTenantId(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   userId: string
 ): Promise<string | null> {
   const { data: userProfile, error } = await supabase
@@ -421,9 +421,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Supabase client and check authentication
-    const authSupabase = await createServerClient();
-    const { data: { user }, error: authError } = await authSupabase.auth.getUser();
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
 
     // Demo mode constants
     const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
@@ -431,7 +430,7 @@ export async function POST(request: NextRequest) {
 
     let effectiveUserId: string;
     let tenantId: string | null = null;
-    let supabase: Awaited<ReturnType<typeof createServerClient>> | ReturnType<typeof createAdminClient>;
+    let supabase: ReturnType<typeof createAdminClient>;
 
     // Company mode: use company_slug and user_email to determine tenant and user
     if (company_slug && user_email) {
@@ -516,17 +515,21 @@ export async function POST(request: NextRequest) {
           );
         }
       }
-    } else if (user) {
-      // Authenticated user mode
-      supabase = authSupabase;
-      effectiveUserId = user.id;
-      tenantId = await getUserTenantId(supabase, user.id);
     } else {
-      // Demo mode: use demo user/tenant when not authenticated
-      supabase = authSupabase;
+      // Demo mode: use admin client for demo user/tenant
+      // This app uses localStorage sessions, NOT Supabase Auth
+      try {
+        supabase = createAdminClient();
+      } catch (error) {
+        console.error('Failed to create admin client:', error);
+        return NextResponse.json<APIError>(
+          { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+          { status: 500 }
+        );
+      }
       effectiveUserId = DEMO_USER_ID;
       tenantId = DEMO_TENANT_ID;
-      console.log('Using demo mode - no authentication, bypassing RLS');
+      console.log('Using demo mode with admin client');
     }
 
     if (!tenantId) {

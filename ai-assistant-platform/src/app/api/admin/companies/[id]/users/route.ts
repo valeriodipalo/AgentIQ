@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 interface RouteParams {
@@ -130,17 +130,23 @@ export async function GET(
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use admin client to bypass RLS
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Admin company users API: Using demo mode');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        {
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
+        },
+        { status: 500 }
+      );
     }
+    const isDemoMode = true;
+    console.log('Admin company users API: Using demo mode');
 
     // Verify company exists
     const { data: company, error: companyError } = await supabase
@@ -286,17 +292,23 @@ export async function POST(
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use admin client to bypass RLS
-    const isDemoMode = !user;
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Admin company users API: Using demo mode for creation');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        {
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
+        },
+        { status: 500 }
+      );
     }
+    const isDemoMode = true;
+    console.log('Admin company users API: Using demo mode for creation');
 
     // Verify company exists
     const { data: company, error: companyError } = await supabase

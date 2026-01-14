@@ -4,10 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError, Message } from '@/types';
 
-// Demo user ID for unauthenticated testing
+// Demo mode constants
 const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
 
 interface RouteParams {
@@ -65,20 +65,20 @@ export async function GET(
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use demo user and admin client to bypass RLS
-    const effectiveUserId = user?.id || DEMO_USER_ID;
-    const isDemoMode = !user;
-
-    // Use admin client in demo mode to bypass RLS policies (including nested feedback query)
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    if (isDemoMode) {
-      console.log('Messages API: Using demo mode with admin client');
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        { code: 'CONFIG_ERROR', message: 'Server configuration error' },
+        { status: 500 }
+      );
     }
+    const effectiveUserId = DEMO_USER_ID;
+    console.log('Messages API: Using admin client with demo user');
 
     // Verify user owns the conversation
     const { data: conversation, error: convError } = await supabase

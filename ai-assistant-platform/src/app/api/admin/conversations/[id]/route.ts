@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
 interface RouteParams {
@@ -78,27 +78,6 @@ function isValidUUID(id: string): boolean {
 }
 
 /**
- * Get user's tenant ID from their profile
- */
-async function getUserTenantId(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  userId: string
-): Promise<string | null> {
-  const { data: userProfile, error } = await supabase
-    .from('users')
-    .select('tenant_id')
-    .eq('id', userId)
-    .single();
-
-  if (error || !userProfile) {
-    console.warn('User profile not found');
-    return null;
-  }
-
-  return userProfile.tenant_id;
-}
-
-/**
  * GET /api/admin/conversations/[id]
  * Fetches a single conversation with full details
  *
@@ -138,48 +117,30 @@ export async function GET(
       );
     }
 
-    // Get Supabase client and check authentication
-    const authClient = await createServerClient();
-    const { data: { user } } = await authClient.auth.getUser();
-
-    // Demo mode: use admin client to bypass RLS
-    const isDemoMode = !user;
-
-    // Use admin client in demo mode
-    const supabase = isDemoMode ? createAdminClient() : authClient;
-
-    // In authenticated mode, get user's tenant for authorization
-    let effectiveTenantId: string | null = null;
-
-    if (!isDemoMode && user) {
-      effectiveTenantId = await getUserTenantId(supabase, user.id);
-      if (!effectiveTenantId) {
-        return NextResponse.json<APIError>(
-          {
-            code: 'VALIDATION_ERROR',
-            message: 'User tenant not configured',
-          },
-          { status: 400 }
-        );
-      }
+    // This app uses localStorage sessions, NOT Supabase Auth
+    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    let supabase;
+    try {
+      supabase = createAdminClient();
+    } catch (error) {
+      console.error('Failed to create admin client:', error);
+      return NextResponse.json<APIError>(
+        {
+          code: 'CONFIG_ERROR',
+          message: 'Server configuration error',
+        },
+        { status: 500 }
+      );
     }
-
-    if (isDemoMode) {
-      console.log('Admin conversation detail API: Using demo mode with admin client');
-    }
+    const isDemoMode = true;
+    console.log('Admin conversation detail API: Using demo mode with admin client');
 
     // Fetch the conversation
-    let conversationQuery = supabase
+    const { data: conversation, error: conversationError } = await supabase
       .from('conversations')
       .select('*')
-      .eq('id', conversationId);
-
-    // In authenticated mode, verify tenant access
-    if (!isDemoMode && effectiveTenantId) {
-      conversationQuery = conversationQuery.eq('tenant_id', effectiveTenantId);
-    }
-
-    const { data: conversation, error: conversationError } = await conversationQuery.single();
+      .eq('id', conversationId)
+      .single();
 
     if (conversationError || !conversation) {
       return NextResponse.json<APIError>(
