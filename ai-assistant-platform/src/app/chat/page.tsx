@@ -419,7 +419,7 @@ function ChatPageContent() {
       setIsCompanyLoading(true);
       setCompanyError(null);
       try {
-        const response = await fetch(`/api/companies/${companySlug}`);
+        const response = await fetch(`/api/companies/by-slug/${companySlug}`);
         if (response.ok) {
           const data = await response.json();
           setCompanyInfo(data.company);

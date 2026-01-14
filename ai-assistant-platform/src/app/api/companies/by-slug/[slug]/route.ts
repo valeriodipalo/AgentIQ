@@ -33,7 +33,7 @@ interface PublicChatbotInfo {
 }
 
 /**
- * GET /api/companies/[slug]
+ * GET /api/companies/by-slug/[slug]
  * Returns company info and list of published chatbots
  * Public endpoint - no authentication required
  */
