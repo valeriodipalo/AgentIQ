@@ -451,6 +451,15 @@ export async function POST(request: NextRequest) {
     const body: ExtendedChatRequest = await request.json();
     const { message: legacyMessage, conversation_id, chatbot_id, model, temperature, max_tokens, company_slug, user_email, user_name, user_id, company_id, messages: aiSdkMessages } = body;
 
+    // Debug logging to understand request format
+    console.log('Chat API received:', JSON.stringify({
+      hasLegacyMessage: !!legacyMessage,
+      hasAiSdkMessages: !!aiSdkMessages,
+      aiSdkMessagesCount: aiSdkMessages?.length,
+      firstMessageStructure: aiSdkMessages?.[0] ? Object.keys(aiSdkMessages[0]) : null,
+      user_id: user_id,
+    }));
+
     // Extract message from either legacy format or AI SDK format
     // AI SDK v6 sends messages with parts array: { parts: [{ type: "text", text: "..." }] }
     let message: string | undefined;
@@ -492,7 +501,8 @@ export async function POST(request: NextRequest) {
     // Session mode: use user_id directly (from workspace)
     if (user_id) {
       // Validate UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      // More permissive UUID regex to handle all UUID formats including demo IDs
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(user_id)) {
         return NextResponse.json<APIError>(
           {
