@@ -8,8 +8,16 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { config } from '@/lib/config';
 import type { APIError, ConversationMetadata } from '@/types';
 
-// Demo mode constants
+// Demo mode constants (used as fallback only if no user_id provided)
 const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
+
+/**
+ * Validate UUID format
+ */
+function isValidUUID(id: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+}
 
 interface RouteParams {
   params: Promise<{
@@ -38,6 +46,21 @@ export async function GET(
       );
     }
 
+    // Get user_id from query params
+    const { searchParams } = new URL(request.url);
+    const userIdParam = searchParams.get('user_id')?.trim();
+
+    // Validate user_id format if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
+        },
+        { status: 400 }
+      );
+    }
+
     // This app uses localStorage sessions, NOT Supabase Auth
     // Use admin client directly to bypass RLS
     let supabase;
@@ -50,8 +73,31 @@ export async function GET(
         { status: 500 }
       );
     }
-    const effectiveUserId = DEMO_USER_ID;
-    console.log('Conversation API GET: Using admin client with demo user');
+
+    // Use provided user_id or fall back to demo user
+    let effectiveUserId = DEMO_USER_ID;
+
+    // Validate user exists if provided
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+      effectiveUserId = user.id;
+    }
+
+    console.log('Conversation API GET: Using user_id:', effectiveUserId);
 
     // Fetch conversation
     const { data: conversation, error: queryError } = await supabase
@@ -130,7 +176,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { title, is_archived, metadata: customMetadata } = body;
+    const { title, is_archived, metadata: customMetadata, user_id: userIdParam } = body;
 
     // Validate title length if provided
     if (title !== undefined && title.length > 255) {
@@ -138,6 +184,17 @@ export async function PATCH(
         {
           code: 'VALIDATION_ERROR',
           message: 'Title must be 255 characters or less',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate user_id format if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
         },
         { status: 400 }
       );
@@ -155,8 +212,31 @@ export async function PATCH(
         { status: 500 }
       );
     }
-    const effectiveUserId = DEMO_USER_ID;
-    console.log('Conversation API PATCH: Using admin client with demo user');
+
+    // Use provided user_id or fall back to demo user
+    let effectiveUserId = DEMO_USER_ID;
+
+    // Validate user exists if provided
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+      effectiveUserId = user.id;
+    }
+
+    console.log('Conversation API PATCH: Using user_id:', effectiveUserId);
 
     // Verify conversation belongs to user and get current metadata
     const { data: existing, error: fetchError } = await supabase
@@ -252,9 +332,21 @@ export async function DELETE(
       );
     }
 
-    // Check for permanent deletion query param
+    // Check for permanent deletion and user_id query params
     const { searchParams } = new URL(request.url);
     const permanent = searchParams.get('permanent') === 'true';
+    const userIdParam = searchParams.get('user_id')?.trim();
+
+    // Validate user_id format if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
+        },
+        { status: 400 }
+      );
+    }
 
     // This app uses localStorage sessions, NOT Supabase Auth
     // Use admin client directly to bypass RLS
@@ -268,8 +360,31 @@ export async function DELETE(
         { status: 500 }
       );
     }
-    const effectiveUserId = DEMO_USER_ID;
-    console.log('Conversation API DELETE: Using admin client with demo user');
+
+    // Use provided user_id or fall back to demo user
+    let effectiveUserId = DEMO_USER_ID;
+
+    // Validate user exists if provided
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+      effectiveUserId = user.id;
+    }
+
+    console.log('Conversation API DELETE: Using user_id:', effectiveUserId);
 
     // Verify conversation exists and belongs to user
     const { data: existing, error: fetchError } = await supabase

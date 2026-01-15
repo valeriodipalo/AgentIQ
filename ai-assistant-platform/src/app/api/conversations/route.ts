@@ -8,9 +8,17 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { config } from '@/lib/config';
 import type { APIError, Conversation, ConversationListResponse, ConversationMetadata } from '@/types';
 
-// Demo mode constants
+// Demo mode constants (used as fallback only if no user_id provided)
 const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
 const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
+/**
+ * Validate UUID format
+ */
+function isValidUUID(id: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+}
 
 /**
  * Extended conversation type with additional computed fields
@@ -32,6 +40,18 @@ export async function GET(request: NextRequest) {
     const perPage = parseInt(searchParams.get('per_page') || '20', 10);
     const archived = searchParams.get('archived') === 'true';
     const search = searchParams.get('search')?.trim();
+    const userIdParam = searchParams.get('user_id')?.trim();
+
+    // Validate user_id if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
+        },
+        { status: 400 }
+      );
+    }
 
     // Validate pagination
     if (page < 1 || perPage < 1 || perPage > 100) {
@@ -60,8 +80,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const effectiveUserId = DEMO_USER_ID;
-    console.log('Conversations API: Using admin client with demo user');
+    // Use provided user_id or fall back to demo user
+    const effectiveUserId = userIdParam || DEMO_USER_ID;
+
+    // Validate user exists in database if not using demo user
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    console.log('Conversations API: Using user_id:', effectiveUserId);
 
     // Query conversations with count
     const offset = (page - 1) * perPage;
@@ -152,7 +193,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, model, metadata: customMetadata } = body;
+    const { title, model, metadata: customMetadata, user_id: userIdParam } = body;
 
     // This app uses localStorage sessions, NOT Supabase Auth
     // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
@@ -170,9 +211,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const effectiveUserId = DEMO_USER_ID;
-    const tenantId = DEMO_TENANT_ID;
-    console.log('Conversations API POST: Using admin client with demo user');
+    // Validate user_id format if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Use provided user_id or fall back to demo user
+    let effectiveUserId = DEMO_USER_ID;
+    let tenantId = DEMO_TENANT_ID;
+
+    // If user_id provided, validate and get their tenant
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, tenant_id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+
+      effectiveUserId = user.id;
+      tenantId = user.tenant_id;
+    }
+
+    console.log('Conversations API POST: Using user_id:', effectiveUserId);
 
     // Validate title length if provided
     if (title && title.length > 255) {
@@ -235,7 +311,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { conversation_id, title, is_archived, metadata: customMetadata } = body;
+    const { conversation_id, title, is_archived, metadata: customMetadata, user_id: userIdParam } = body;
 
     if (!conversation_id) {
       return NextResponse.json<APIError>(
@@ -274,8 +350,41 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const effectiveUserId = DEMO_USER_ID;
-    console.log('Conversations API PATCH: Using admin client with demo user');
+    // Validate user_id format if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Use provided user_id or fall back to demo user
+    let effectiveUserId = DEMO_USER_ID;
+
+    // Validate user exists if provided
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+      effectiveUserId = user.id;
+    }
+
+    console.log('Conversations API PATCH: Using user_id:', effectiveUserId);
 
     // Verify conversation belongs to user
     const { data: existing, error: fetchError } = await supabase
@@ -357,7 +466,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
-    const { conversation_ids, permanent = false } = body;
+    const { conversation_ids, permanent = false, user_id: userIdParam } = body;
 
     if (!Array.isArray(conversation_ids) || conversation_ids.length === 0) {
       return NextResponse.json<APIError>(
@@ -396,8 +505,41 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const effectiveUserId = DEMO_USER_ID;
-    console.log('Conversations API DELETE: Using admin client with demo user');
+    // Validate user_id format if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Use provided user_id or fall back to demo user
+    let effectiveUserId = DEMO_USER_ID;
+
+    // Validate user exists if provided
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+      effectiveUserId = user.id;
+    }
+
+    console.log('Conversations API DELETE: Using user_id:', effectiveUserId);
 
     // Count how many conversations actually belong to the user
     const { count: existingCount, error: countError } = await supabase

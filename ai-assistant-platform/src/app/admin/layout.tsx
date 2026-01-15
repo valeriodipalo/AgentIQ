@@ -126,7 +126,7 @@ export default function AdminLayout({
           {/* Sidebar footer */}
           <div className="border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
             <Link
-              href="/chatbots"
+              href="/"
               className="flex items-center gap-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
             >
               <Bot className="h-4 w-4" />

@@ -7,8 +7,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError, Message } from '@/types';
 
-// Demo mode constants
+// Demo mode constants (used as fallback only if no user_id provided)
 const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
+
+/**
+ * Validate UUID format
+ */
+function isValidUUID(id: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+}
 
 interface RouteParams {
   params: Promise<{
@@ -37,11 +45,23 @@ export async function GET(
       );
     }
 
-    // Get query parameters for pagination
+    // Get query parameters for pagination and user
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const perPage = parseInt(searchParams.get('per_page') || '50', 10);
     const order = searchParams.get('order') || 'asc'; // asc = oldest first, desc = newest first
+    const userIdParam = searchParams.get('user_id')?.trim();
+
+    // Validate user_id format if provided
+    if (userIdParam && !isValidUUID(userIdParam)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid user_id format',
+        },
+        { status: 400 }
+      );
+    }
 
     // Validate pagination
     if (page < 1 || perPage < 1 || perPage > 100) {
@@ -77,8 +97,31 @@ export async function GET(
         { status: 500 }
       );
     }
-    const effectiveUserId = DEMO_USER_ID;
-    console.log('Messages API: Using admin client with demo user');
+
+    // Use provided user_id or fall back to demo user
+    let effectiveUserId = DEMO_USER_ID;
+
+    // Validate user exists if provided
+    if (userIdParam) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userIdParam)
+        .single();
+
+      if (userError || !user) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+      effectiveUserId = user.id;
+    }
+
+    console.log('Messages API: Using user_id:', effectiveUserId);
 
     // Verify user owns the conversation
     const { data: conversation, error: convError } = await supabase
