@@ -17,6 +17,9 @@ import {
   Bot,
   MessageSquare,
   ArrowRight,
+  Ticket,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +28,7 @@ interface CompanyStats {
   user_count: number;
   chatbot_count: number;
   conversation_count: number;
+  active_invite_count: number;
 }
 
 interface Company {
@@ -34,6 +38,7 @@ interface Company {
   is_active: boolean;
   created_at: string;
   stats: CompanyStats;
+  primary_invite_code: string | null;
 }
 
 interface CompaniesResponse {
@@ -44,7 +49,6 @@ interface CompaniesResponse {
     per_page: number;
     has_more: boolean;
   };
-  demo_mode: boolean;
 }
 
 // Demo data for when API is not available
@@ -55,7 +59,8 @@ const DEMO_COMPANIES: Company[] = [
     slug: 'acme-corp',
     is_active: true,
     created_at: '2024-01-15T10:00:00Z',
-    stats: { user_count: 25, chatbot_count: 3, conversation_count: 142 },
+    stats: { user_count: 25, chatbot_count: 3, conversation_count: 142, active_invite_count: 2 },
+    primary_invite_code: 'ACME-AB2C',
   },
   {
     id: '2',
@@ -63,7 +68,8 @@ const DEMO_COMPANIES: Company[] = [
     slug: 'techstart',
     is_active: true,
     created_at: '2024-02-20T14:30:00Z',
-    stats: { user_count: 12, chatbot_count: 2, conversation_count: 89 },
+    stats: { user_count: 12, chatbot_count: 2, conversation_count: 89, active_invite_count: 1 },
+    primary_invite_code: 'TECH-XY9Z',
   },
   {
     id: '3',
@@ -71,7 +77,8 @@ const DEMO_COMPANIES: Company[] = [
     slug: 'global-services',
     is_active: false,
     created_at: '2024-03-10T09:15:00Z',
-    stats: { user_count: 8, chatbot_count: 1, conversation_count: 45 },
+    stats: { user_count: 8, chatbot_count: 1, conversation_count: 45, active_invite_count: 0 },
+    primary_invite_code: null,
   },
 ];
 
@@ -87,7 +94,7 @@ export default function CompaniesListPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [demoMode, setDemoMode] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Debounce search input
   useEffect(() => {
@@ -96,6 +103,17 @@ export default function CompaniesListPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Copy invite code to clipboard
+  const copyInviteCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy code:', err);
+    }
+  };
 
   // Fetch companies
   const fetchCompanies = useCallback(async (page: number, search: string) => {
@@ -114,14 +132,12 @@ export default function CompaniesListPage() {
       const response = await fetch(`/api/admin/companies?${params}`);
 
       if (!response.ok) {
-        // Use demo data if API not available
-        throw new Error('API not available');
+        throw new Error('Failed to fetch companies');
       }
 
       const data: CompaniesResponse = await response.json();
       setCompanies(data.companies);
       setPagination(data.pagination);
-      setDemoMode(data.demo_mode || false);
     } catch (err) {
       console.error('Error fetching companies:', err);
       // Fall back to demo data
@@ -138,7 +154,7 @@ export default function CompaniesListPage() {
         per_page: 10,
         has_more: false,
       });
-      setDemoMode(true);
+      setError('Could not connect to API. Showing demo data.');
     } finally {
       setLoading(false);
     }
@@ -183,15 +199,6 @@ export default function CompaniesListPage() {
           </Button>
         </Link>
       </div>
-
-      {/* Demo mode notice */}
-      {demoMode && (
-        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-          <p className="text-sm text-blue-700 dark:text-blue-400">
-            Viewing demo data. API endpoints for companies are not yet configured.
-          </p>
-        </div>
-      )}
 
       {/* Search */}
       <div className="mb-6">
@@ -264,6 +271,9 @@ export default function CompaniesListPage() {
                     Conversations
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Invite Code
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -313,6 +323,42 @@ export default function CompaniesListPage() {
                           {company.stats.conversation_count}
                         </span>
                       </div>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      {company.primary_invite_code ? (
+                        <div className="flex items-center gap-2">
+                          <code className="rounded bg-zinc-100 px-2 py-1 text-sm font-mono text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                            {company.primary_invite_code}
+                          </code>
+                          <button
+                            onClick={() => copyInviteCode(company.primary_invite_code!)}
+                            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                            title="Copy invite code"
+                          >
+                            {copiedCode === company.primary_invite_code ? (
+                              <Check className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </button>
+                          {company.stats.active_invite_count > 1 && (
+                            <Link
+                              href={`/admin/companies/${company.id}/invites`}
+                              className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                            >
+                              +{company.stats.active_invite_count - 1} more
+                            </Link>
+                          )}
+                        </div>
+                      ) : (
+                        <Link
+                          href={`/admin/companies/${company.id}/invites`}
+                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          <Ticket className="h-4 w-4" />
+                          Add code
+                        </Link>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       {company.is_active ? (

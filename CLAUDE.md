@@ -2,39 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
----
-## ⚠️ PRIORITY TASK - DELETE THIS SECTION WHEN COMPLETED ⚠️
-
-**Task:** Verify Production API Data Retrieval Fix (from session 2026-01-13)
-
-**Context:** RLS bypass fix was deployed (commit `1b6317c`) but verification was not completed.
-
-**Steps to Execute:**
-1. Test API endpoints directly:
-   ```bash
-   curl -s https://agent-iq-rose.vercel.app/api/chatbots | head -100
-   curl -s https://agent-iq-rose.vercel.app/api/conversations | head -100
-   ```
-
-2. If APIs return empty or error:
-   - Check Vercel function logs for errors
-   - Verify `SUPABASE_SERVICE_ROLE_KEY` is set in Vercel environment variables
-   - Check if `createAdminClient()` is working correctly
-
-3. If APIs return data successfully:
-   - Test the full user flow: landing page → invite code → workspace
-   - Confirm chatbots and conversations display correctly
-
-4. **DELETE THIS ENTIRE SECTION** from CLAUDE.md once verified working
-
-**Files Changed in Fix:**
-- `src/app/api/chatbots/route.ts` - Added admin client for demo mode
-- `src/app/api/chatbots/[id]/route.ts` - New route created
-- `src/app/api/conversations/route.ts` - Added admin client for all methods
-- `src/app/api/companies/[id]/chatbots/route.ts` - Removed invalid `avatar_url` column
-
----
-
 ## Development Workflow Rules
 
 **Before implementing any new feature or functionality:**
@@ -91,7 +58,9 @@ ai-assistant-platform/src/
 │   │   │   └── conversations/  # Conversation browser API with filters
 │   │   ├── chat/route.ts       # Main chat endpoint (Edge runtime, streaming)
 │   │   ├── chatbots/route.ts   # Public chatbots list endpoint
-│   │   ├── companies/[slug]/   # Public company info by slug
+│   │   ├── companies/
+│   │   │   ├── [id]/           # Company by ID (admin operations)
+│   │   │   └── by-slug/[slug]/ # Public company info by slug
 │   │   ├── conversations/      # CRUD for conversations
 │   │   ├── feedback/route.ts   # Message feedback submission
 │   │   └── usage/route.ts      # Usage metrics endpoint
@@ -118,7 +87,6 @@ ai-assistant-platform/src/
 │   │   └── server.ts           # Server-side client + admin client
 │   ├── tenant/                 # Tenant resolution utilities
 │   └── usage/                  # Usage tracking helpers
-├── middleware.ts               # Auth session refresh, protected routes
 └── types/
     ├── index.ts                # Application types (includes ChatbotSettings)
     └── database.ts             # Supabase database types
@@ -263,9 +231,9 @@ Chatbots support extended model parameters stored in a `settings` JSONB column:
 ### Authentication
 
 - Supabase Auth handles authentication
-- Middleware refreshes sessions on all routes
+- Auth is handled at the API route level (no middleware)
 - Protected routes: `/chat`, `/api/chat`, `/api/conversations`, `/api/feedback`
-- Auth enforcement currently disabled in middleware (TODO comment)
+- Demo mode allows unauthenticated access with predefined demo user/tenant IDs
 
 ## Environment Variables
 
@@ -311,6 +279,37 @@ The app is deployed on Vercel with the following configuration:
 - The `rootDirectory` setting must be configured in Vercel Dashboard, NOT in `vercel.json`
 - Environment variables must be set before deployment for build-time access
 - The `vercel.json` file at repository root only contains framework and region settings
+
+## Recent Fixes (2026-01-14)
+
+### Production API Timeout Fix
+
+**Problem:** All API endpoints were timing out (504 errors) in production. The landing page loaded but `/api/health`, `/api/chatbots`, `/api/conversations` all hung indefinitely.
+
+**Root Cause:** Next.js 16 doesn't allow different dynamic parameter names at the same path level. The routes:
+- `/api/companies/[slug]/route.ts`
+- `/api/companies/[id]/chatbots/route.ts`
+
+Had conflicting parameter names (`slug` vs `id`), which prevented ALL serverless functions from initializing.
+
+**Solution:**
+1. Removed deprecated `middleware.ts` (was causing build warnings)
+2. Moved `/api/companies/[slug]` to `/api/companies/by-slug/[slug]`
+3. Updated reference in `chat/page.tsx`
+
+**Commits:**
+- `2908878` - Remove deprecated middleware causing serverless function timeouts
+- `87a9133` - Fix dynamic path conflict causing all serverless functions to hang
+- `9571535` - Exclude API routes from middleware matcher
+
+**Verification:**
+```bash
+curl -s https://agent-iq-rose.vercel.app/api/health
+# Returns: {"status":"ok","timestamp":"...","responseTime":"2ms",...}
+
+curl -s https://agent-iq-rose.vercel.app/api/chatbots
+# Returns: {"chatbots":[...],"pagination":{...},"demo_mode":true}
+```
 
 ## Database Migrations
 

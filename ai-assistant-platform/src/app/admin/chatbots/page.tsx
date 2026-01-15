@@ -5,7 +5,8 @@
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Plus,
@@ -17,18 +18,27 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
+  Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+interface Company {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface Chatbot {
   id: string;
+  tenant_id: string;
   name: string;
   description: string | null;
   model: string;
   is_published: boolean;
   created_at: string;
   updated_at: string;
+  company?: Company;
 }
 
 interface ChatbotsResponse {
@@ -39,11 +49,19 @@ interface ChatbotsResponse {
     per_page: number;
     has_more: boolean;
   };
-  demo_mode: boolean;
 }
 
-export default function ChatbotsListPage() {
+interface CompaniesResponse {
+  companies: Company[];
+}
+
+function ChatbotsListContent() {
+  const searchParams = useSearchParams();
+  const companyIdFromUrl = searchParams.get('company');
+
   const [chatbots, setChatbots] = useState<Chatbot[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>(companyIdFromUrl || '');
   const [pagination, setPagination] = useState({
     total: 0,
     page: 1,
@@ -56,6 +74,22 @@ export default function ChatbotsListPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Fetch companies for filter dropdown
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const response = await fetch('/api/admin/companies?per_page=100');
+        if (response.ok) {
+          const data: CompaniesResponse = await response.json();
+          setCompanies(data.companies || []);
+        }
+      } catch (err) {
+        console.error('Error fetching companies:', err);
+      }
+    };
+    fetchCompanies();
+  }, []);
+
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -65,7 +99,7 @@ export default function ChatbotsListPage() {
   }, [searchQuery]);
 
   // Fetch chatbots
-  const fetchChatbots = useCallback(async (page: number, search: string) => {
+  const fetchChatbots = useCallback(async (page: number, search: string, tenantId: string) => {
     setLoading(true);
     setError(null);
 
@@ -76,6 +110,9 @@ export default function ChatbotsListPage() {
       });
       if (search) {
         params.set('search', search);
+      }
+      if (tenantId) {
+        params.set('tenant_id', tenantId);
       }
 
       const response = await fetch(`/api/admin/chatbots?${params}`);
@@ -94,16 +131,25 @@ export default function ChatbotsListPage() {
     }
   }, []);
 
-  // Initial fetch and refetch on search/page change
+  // Initial fetch and refetch on search/page/company change
   useEffect(() => {
-    fetchChatbots(pagination.page, debouncedSearch);
-  }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchChatbots(pagination.page, debouncedSearch, selectedCompanyId);
+  }, [debouncedSearch, selectedCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle page change
   const handlePageChange = (newPage: number) => {
     setPagination((prev) => ({ ...prev, page: newPage }));
-    fetchChatbots(newPage, debouncedSearch);
+    fetchChatbots(newPage, debouncedSearch, selectedCompanyId);
   };
+
+  // Handle company filter change
+  const handleCompanyChange = (companyId: string) => {
+    setSelectedCompanyId(companyId);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+
+  // Get selected company name for title
+  const selectedCompanyName = companies.find(c => c.id === selectedCompanyId)?.name;
 
   // Handle delete
   const handleDelete = async (chatbot: Chatbot) => {
@@ -123,7 +169,7 @@ export default function ChatbotsListPage() {
       }
 
       // Refresh the list
-      fetchChatbots(pagination.page, debouncedSearch);
+      fetchChatbots(pagination.page, debouncedSearch, selectedCompanyId);
     } catch (err) {
       console.error('Error deleting chatbot:', err);
       alert('Failed to delete chatbot. Please try again.');
@@ -147,10 +193,12 @@ export default function ChatbotsListPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-            Chatbots
+            {selectedCompanyName ? `Chatbots - ${selectedCompanyName}` : 'Chatbots'}
           </h1>
           <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-            Manage your AI chatbots and their configurations
+            {selectedCompanyName
+              ? `Manage chatbots for ${selectedCompanyName}`
+              : 'Manage your AI chatbots and their configurations'}
           </p>
         </div>
         <Link href="/admin/chatbots/new">
@@ -161,9 +209,35 @@ export default function ChatbotsListPage() {
         </Link>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative max-w-md">
+      {/* Filters */}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
+        {/* Company Filter */}
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-zinc-400" />
+          <select
+            value={selectedCompanyId}
+            onChange={(e) => handleCompanyChange(e.target.value)}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          >
+            <option value="">All Companies</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.id}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+          {selectedCompanyId && (
+            <button
+              onClick={() => handleCompanyChange('')}
+              className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
+
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
           <Input
             type="text"
@@ -183,7 +257,7 @@ export default function ChatbotsListPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fetchChatbots(pagination.page, debouncedSearch)}
+            onClick={() => fetchChatbots(pagination.page, debouncedSearch, selectedCompanyId)}
             className="ml-auto"
           >
             Retry
@@ -223,6 +297,9 @@ export default function ChatbotsListPage() {
                     Name
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Company
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                     Model
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -253,6 +330,19 @@ export default function ChatbotsListPage() {
                           </p>
                         )}
                       </div>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      {chatbot.company ? (
+                        <Link
+                          href={`/admin/companies/${chatbot.company.id}`}
+                          className="flex items-center gap-2 text-sm text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                        >
+                          <Building2 className="h-4 w-4 text-zinc-400" />
+                          <span>{chatbot.company.name}</span>
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-zinc-400">—</span>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -334,5 +424,18 @@ export default function ChatbotsListPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Wrap with Suspense for useSearchParams
+export default function ChatbotsListPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-96 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
+      </div>
+    }>
+      <ChatbotsListContent />
+    </Suspense>
   );
 }

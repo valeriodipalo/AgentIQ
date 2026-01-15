@@ -8,12 +8,14 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Bot, Loader2, ChevronDown, ChevronUp, Settings2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Bot, Loader2, ChevronDown, ChevronUp, Settings2, Sparkles, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CompanySelector } from '@/components/ui/company-selector';
 import { supportsReasoningParams } from '@/types';
 
 interface FormData {
+  tenant_id: string;
   name: string;
   description: string;
   system_prompt: string;
@@ -33,6 +35,7 @@ interface FormData {
 }
 
 interface FormErrors {
+  tenant_id?: string;
   name?: string;
   description?: string;
   system_prompt?: string;
@@ -73,6 +76,7 @@ export default function CreateChatbotPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [formData, setFormData] = useState<FormData>({
+    tenant_id: '',
     name: '',
     description: '',
     system_prompt: 'You are a helpful AI assistant.',
@@ -124,6 +128,10 @@ export default function CreateChatbotPage() {
   // Validate form
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
+
+    if (!formData.tenant_id) {
+      newErrors.tenant_id = 'Company is required';
+    }
 
     if (!formData.name.trim()) {
       newErrors.name = 'Name is required';
@@ -197,6 +205,7 @@ export default function CreateChatbotPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          tenant_id: formData.tenant_id,
           name: formData.name.trim(),
           description: formData.description.trim() || undefined,
           system_prompt: formData.system_prompt || undefined,
@@ -261,6 +270,28 @@ export default function CreateChatbotPage() {
               </p>
             </div>
           )}
+
+          {/* Company */}
+          <div className="mb-6">
+            <label
+              htmlFor="tenant_id"
+              className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-900 dark:text-zinc-100"
+            >
+              <Building2 className="h-4 w-4" />
+              Company <span className="text-red-500">*</span>
+            </label>
+            <CompanySelector
+              value={formData.tenant_id}
+              onChange={(companyId) => {
+                setFormData((prev) => ({ ...prev, tenant_id: companyId }));
+                if (errors.tenant_id) {
+                  setErrors((prev) => ({ ...prev, tenant_id: undefined }));
+                }
+              }}
+              error={errors.tenant_id}
+              required
+            />
+          </div>
 
           {/* Name */}
           <div className="mb-6">

@@ -7,9 +7,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
-// Demo mode constants
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001';
-
 /**
  * Company type with stats
  */
@@ -25,7 +22,9 @@ export interface CompanyWithStats {
     user_count: number;
     chatbot_count: number;
     conversation_count: number;
+    active_invite_count: number;
   };
+  primary_invite_code: string | null;
 }
 
 /**
@@ -97,8 +96,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // This app uses localStorage sessions, NOT Supabase Auth
-    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    // Use admin client to bypass RLS for cross-tenant admin queries
     let supabase;
     try {
       supabase = createAdminClient();
@@ -112,8 +110,6 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
-    const isDemoMode = true;
-    console.log('Admin companies API: Using demo mode with admin client');
 
     // Build query for tenants
     const offset = (page - 1) * perPage;
@@ -163,6 +159,23 @@ export async function GET(request: NextRequest) {
           .select('id', { count: 'exact', head: true })
           .eq('tenant_id', tenant.id);
 
+        // Get active invite codes count and primary code
+        const now = new Date().toISOString();
+        const { data: inviteCodes, count: inviteCount } = await supabase
+          .from('invite_codes')
+          .select('code', { count: 'exact' })
+          .eq('tenant_id', tenant.id)
+          .eq('is_active', true)
+          .or(`expires_at.is.null,expires_at.gt.${now}`)
+          .or(`max_uses.is.null,current_uses.lt.max_uses`)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        // Get the primary (most recent active) invite code
+        const primaryInviteCode = inviteCodes && inviteCodes.length > 0
+          ? inviteCodes[0].code
+          : null;
+
         return {
           id: tenant.id,
           name: tenant.name,
@@ -175,7 +188,9 @@ export async function GET(request: NextRequest) {
             user_count: userCount || 0,
             chatbot_count: chatbotCount || 0,
             conversation_count: conversationCount || 0,
+            active_invite_count: inviteCount || 0,
           },
+          primary_invite_code: primaryInviteCode,
         };
       })
     );
@@ -188,7 +203,6 @@ export async function GET(request: NextRequest) {
         per_page: perPage,
         has_more: (count || 0) > offset + perPage,
       },
-      demo_mode: isDemoMode,
     });
   } catch (error) {
     console.error('Admin companies API error:', error);
@@ -234,8 +248,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // This app uses localStorage sessions, NOT Supabase Auth
-    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    // Use admin client to bypass RLS for admin operations
     let supabase;
     try {
       supabase = createAdminClient();
@@ -249,8 +262,6 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-    const isDemoMode = true;
-    console.log('Admin companies API: Using demo mode for creation');
 
     // Check if slug is unique
     const { data: existingSlug } = await supabase

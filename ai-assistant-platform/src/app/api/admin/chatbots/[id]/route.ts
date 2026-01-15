@@ -7,9 +7,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
-// Demo mode constants
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001';
-
 interface RouteParams {
   params: Promise<{
     id: string;
@@ -20,6 +17,7 @@ interface RouteParams {
  * Update chatbot request body
  */
 interface UpdateChatbotRequest {
+  tenant_id?: string;
   name?: string;
   description?: string;
   system_prompt?: string;
@@ -85,7 +83,7 @@ function isValidUUID(id: string): boolean {
 
 /**
  * GET /api/admin/chatbots/[id]
- * Fetches a specific chatbot by ID
+ * Fetches a specific chatbot by ID (admin can access any chatbot)
  */
 export async function GET(
   request: NextRequest,
@@ -114,8 +112,7 @@ export async function GET(
       );
     }
 
-    // This app uses localStorage sessions, NOT Supabase Auth
-    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    // Use admin client to bypass RLS for admin queries
     let supabase;
     try {
       supabase = createAdminClient();
@@ -129,28 +126,39 @@ export async function GET(
         { status: 500 }
       );
     }
-    const tenantId = DEMO_TENANT_ID;
-    console.log('Admin chatbots API: Using demo mode');
 
-    // Fetch chatbot
+    // Fetch chatbot with company info
     const { data: chatbot, error: queryError } = await supabase
       .from('chatbots')
       .select('*')
       .eq('id', chatbotId)
-      .eq('tenant_id', tenantId)
       .single();
 
     if (queryError || !chatbot) {
       return NextResponse.json<APIError>(
         {
           code: 'NOT_FOUND',
-          message: 'Chatbot not found or access denied',
+          message: 'Chatbot not found',
         },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(chatbot);
+    // Fetch company info
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('id, name, slug')
+      .eq('id', chatbot.tenant_id)
+      .single();
+
+    return NextResponse.json({
+      ...chatbot,
+      company: tenant ? {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+      } : null,
+    });
   } catch (error) {
     console.error('Admin chatbot API error:', error);
     return NextResponse.json<APIError>(
@@ -165,7 +173,7 @@ export async function GET(
 
 /**
  * PUT /api/admin/chatbots/[id]
- * Updates a specific chatbot
+ * Updates a specific chatbot (admin can update any chatbot)
  */
 export async function PUT(
   request: NextRequest,
@@ -195,7 +203,20 @@ export async function PUT(
     }
 
     const body: UpdateChatbotRequest = await request.json();
-    const { name, description, system_prompt, model, temperature, max_tokens, settings, is_published } = body;
+    const { tenant_id, name, description, system_prompt, model, temperature, max_tokens, settings, is_published } = body;
+
+    // Validate tenant_id if provided
+    if (tenant_id !== undefined && tenant_id !== null) {
+      if (!isValidUUID(tenant_id)) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid tenant_id format',
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Validate fields
     const nameError = validateName(name);
@@ -253,8 +274,7 @@ export async function PUT(
       );
     }
 
-    // This app uses localStorage sessions, NOT Supabase Auth
-    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    // Use admin client to bypass RLS for admin operations
     let supabase;
     try {
       supabase = createAdminClient();
@@ -268,31 +288,51 @@ export async function PUT(
         { status: 500 }
       );
     }
-    const tenantId = DEMO_TENANT_ID;
-    console.log('Admin chatbots API: Using demo mode for update');
 
-    // Verify chatbot exists and belongs to tenant
+    // Verify chatbot exists
     const { data: existing, error: fetchError } = await supabase
       .from('chatbots')
       .select('id, settings')
       .eq('id', chatbotId)
-      .eq('tenant_id', tenantId)
       .single();
 
     if (fetchError || !existing) {
       return NextResponse.json<APIError>(
         {
           code: 'NOT_FOUND',
-          message: 'Chatbot not found or access denied',
+          message: 'Chatbot not found',
         },
         { status: 404 }
       );
+    }
+
+    // If changing tenant_id, verify the new tenant exists
+    if (tenant_id !== undefined && tenant_id !== null) {
+      const { data: newTenant, error: tenantError } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('id', tenant_id)
+        .single();
+
+      if (tenantError || !newTenant) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'Target company not found',
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Build update object
     const updates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
+
+    if (tenant_id !== undefined) {
+      updates.tenant_id = tenant_id;
+    }
 
     if (name !== undefined) {
       updates.name = name.trim();
@@ -336,7 +376,6 @@ export async function PUT(
       .from('chatbots')
       .update(updates)
       .eq('id', chatbotId)
-      .eq('tenant_id', tenantId)
       .select()
       .single();
 
@@ -367,7 +406,7 @@ export async function PUT(
 
 /**
  * DELETE /api/admin/chatbots/[id]
- * Deletes a specific chatbot
+ * Deletes a specific chatbot (admin can delete any chatbot)
  */
 export async function DELETE(
   request: NextRequest,
@@ -396,8 +435,7 @@ export async function DELETE(
       );
     }
 
-    // This app uses localStorage sessions, NOT Supabase Auth
-    // Use admin client directly to bypass RLS (avoid auth.getUser() which can hang)
+    // Use admin client to bypass RLS for admin operations
     let supabase;
     try {
       supabase = createAdminClient();
@@ -411,22 +449,19 @@ export async function DELETE(
         { status: 500 }
       );
     }
-    const tenantId = DEMO_TENANT_ID;
-    console.log('Admin chatbots API: Using demo mode for deletion');
 
-    // Verify chatbot exists and belongs to tenant
+    // Verify chatbot exists
     const { data: existing, error: fetchError } = await supabase
       .from('chatbots')
       .select('id, name')
       .eq('id', chatbotId)
-      .eq('tenant_id', tenantId)
       .single();
 
     if (fetchError || !existing) {
       return NextResponse.json<APIError>(
         {
           code: 'NOT_FOUND',
-          message: 'Chatbot not found or access denied',
+          message: 'Chatbot not found',
         },
         { status: 404 }
       );
@@ -436,8 +471,7 @@ export async function DELETE(
     const { error: deleteError } = await supabase
       .from('chatbots')
       .delete()
-      .eq('id', chatbotId)
-      .eq('tenant_id', tenantId);
+      .eq('id', chatbotId);
 
     if (deleteError) {
       console.error('Error deleting chatbot:', deleteError);
