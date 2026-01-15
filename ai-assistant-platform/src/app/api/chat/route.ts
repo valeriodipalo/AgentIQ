@@ -17,11 +17,39 @@ import { supportsReasoningParams as checkReasoningSupport } from '@/types';
 export const runtime = 'edge';
 
 /**
- * AI SDK message format
+ * AI SDK v6 message part format
+ */
+interface AISDKMessagePart {
+  type: 'text';
+  text: string;
+}
+
+/**
+ * AI SDK v6 message format - uses parts array instead of content
  */
 interface AISDKMessage {
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content?: string;  // Legacy format
+  parts?: AISDKMessagePart[];  // AI SDK v6 format
+  id?: string;
+}
+
+/**
+ * Extract text content from AI SDK message (handles both formats)
+ */
+function extractMessageContent(msg: AISDKMessage): string {
+  // AI SDK v6 format: parts array
+  if (msg.parts && Array.isArray(msg.parts)) {
+    const textParts = msg.parts.filter(p => p.type === 'text' && p.text);
+    if (textParts.length > 0) {
+      return textParts.map(p => p.text).join('');
+    }
+  }
+  // Legacy format: content string
+  if (typeof msg.content === 'string') {
+    return msg.content;
+  }
+  return '';
 }
 
 /**
@@ -424,17 +452,18 @@ export async function POST(request: NextRequest) {
     const { message: legacyMessage, conversation_id, chatbot_id, model, temperature, max_tokens, company_slug, user_email, user_name, user_id, company_id, messages: aiSdkMessages } = body;
 
     // Extract message from either legacy format or AI SDK format
-    // AI SDK sends messages as array, we need the last user message
+    // AI SDK v6 sends messages with parts array: { parts: [{ type: "text", text: "..." }] }
     let message: string | undefined;
 
     if (legacyMessage && typeof legacyMessage === 'string') {
       // Legacy format: single message field
       message = legacyMessage;
     } else if (aiSdkMessages && Array.isArray(aiSdkMessages) && aiSdkMessages.length > 0) {
-      // AI SDK format: messages array, get the last user message
+      // AI SDK v6 format: messages array with parts, get the last user message
       const lastUserMessage = [...aiSdkMessages].reverse().find(m => m.role === 'user');
       if (lastUserMessage) {
-        message = lastUserMessage.content;
+        // Use helper to extract content from either parts array or content field
+        message = extractMessageContent(lastUserMessage);
       }
     }
 
