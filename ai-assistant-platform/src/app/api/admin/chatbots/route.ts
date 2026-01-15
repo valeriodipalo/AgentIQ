@@ -357,9 +357,9 @@ export async function POST(request: NextRequest) {
         name: name.trim(),
         description: description?.trim() || null,
         system_prompt: system_prompt || 'You are a helpful AI assistant.',
-        model: model || 'gpt-4-turbo-preview',
-        temperature: temperature ?? 0.7,
-        max_tokens: max_tokens ?? 4096,
+        model: model || 'gpt-5.1',
+        temperature: temperature ?? 1,
+        max_tokens: max_tokens ?? 128000,
         settings: settings ? JSON.parse(JSON.stringify(settings)) : null,
         is_published: is_published ?? false,
         created_by: DEMO_USER_ID, // Use demo user as created_by for now

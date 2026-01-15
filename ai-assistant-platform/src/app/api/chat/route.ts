@@ -17,12 +17,25 @@ import { supportsReasoningParams as checkReasoningSupport } from '@/types';
 export const runtime = 'edge';
 
 /**
+ * AI SDK message format
+ */
+interface AISDKMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+/**
  * Extended chat request with company context
+ * Supports both legacy format (message field) and AI SDK format (messages array)
  */
 interface ExtendedChatRequest extends ChatRequest {
   company_slug?: string;
   user_email?: string;
   user_name?: string;
+  user_id?: string;
+  company_id?: string;
+  // AI SDK format - messages array
+  messages?: AISDKMessage[];
 }
 
 /**
@@ -408,7 +421,22 @@ export async function POST(request: NextRequest) {
   try {
     // Parse request body
     const body: ExtendedChatRequest = await request.json();
-    const { message, conversation_id, chatbot_id, model, temperature, max_tokens, company_slug, user_email, user_name } = body;
+    const { message: legacyMessage, conversation_id, chatbot_id, model, temperature, max_tokens, company_slug, user_email, user_name, user_id, company_id, messages: aiSdkMessages } = body;
+
+    // Extract message from either legacy format or AI SDK format
+    // AI SDK sends messages as array, we need the last user message
+    let message: string | undefined;
+
+    if (legacyMessage && typeof legacyMessage === 'string') {
+      // Legacy format: single message field
+      message = legacyMessage;
+    } else if (aiSdkMessages && Array.isArray(aiSdkMessages) && aiSdkMessages.length > 0) {
+      // AI SDK format: messages array, get the last user message
+      const lastUserMessage = [...aiSdkMessages].reverse().find(m => m.role === 'user');
+      if (lastUserMessage) {
+        message = lastUserMessage.content;
+      }
+    }
 
     // Validate required fields
     if (!message || typeof message !== 'string' || message.trim() === '') {
@@ -432,8 +460,86 @@ export async function POST(request: NextRequest) {
     let tenantId: string | null = null;
     let supabase: ReturnType<typeof createAdminClient>;
 
+    // Session mode: use user_id directly (from workspace)
+    if (user_id) {
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(user_id)) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid user_id format',
+          },
+          { status: 400 }
+        );
+      }
+
+      // Use admin client to bypass RLS
+      const adminSupabase = createAdminClient();
+      supabase = adminSupabase;
+
+      // Fetch user and their tenant
+      const { data: userProfile, error: userError } = await adminSupabase
+        .from('users')
+        .select('id, tenant_id')
+        .eq('id', user_id)
+        .single();
+
+      if (userError || !userProfile) {
+        return NextResponse.json<APIError>(
+          {
+            code: 'VALIDATION_ERROR',
+            message: 'User not found',
+          },
+          { status: 400 }
+        );
+      }
+
+      effectiveUserId = userProfile.id;
+      tenantId = userProfile.tenant_id;
+      console.log('Session mode: Using user', effectiveUserId, 'in tenant', tenantId);
+
+      // Validate chatbot belongs to this tenant if chatbot_id provided
+      if (chatbot_id) {
+        const { data: chatbot, error: chatbotError } = await adminSupabase
+          .from('chatbots')
+          .select('tenant_id, is_published')
+          .eq('id', chatbot_id)
+          .single();
+
+        if (chatbotError || !chatbot) {
+          return NextResponse.json<APIError>(
+            {
+              code: 'NOT_FOUND',
+              message: 'Chatbot not found',
+            },
+            { status: 404 }
+          );
+        }
+
+        if (chatbot.tenant_id !== tenantId) {
+          return NextResponse.json<APIError>(
+            {
+              code: 'VALIDATION_ERROR',
+              message: 'Chatbot does not belong to this company',
+            },
+            { status: 400 }
+          );
+        }
+
+        if (!chatbot.is_published) {
+          return NextResponse.json<APIError>(
+            {
+              code: 'VALIDATION_ERROR',
+              message: 'Chatbot is not published',
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
     // Company mode: use company_slug and user_email to determine tenant and user
-    if (company_slug && user_email) {
+    else if (company_slug && user_email) {
       // Validate user_email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(user_email)) {

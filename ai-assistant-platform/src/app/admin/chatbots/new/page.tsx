@@ -80,10 +80,10 @@ export default function CreateChatbotPage() {
     name: '',
     description: '',
     system_prompt: 'You are a helpful AI assistant.',
-    model: 'gpt-4-turbo-preview',
+    model: 'gpt-5.1',
     // Standard parameters
-    temperature: 0.7,
-    max_tokens: 4096,
+    temperature: 1,
+    max_tokens: 128000,
     top_p: 1,
     frequency_penalty: 0,
     presence_penalty: 0,
