@@ -50,13 +50,23 @@ function ChatInterface() {
   const [isLoadingChatbot, setIsLoadingChatbot] = useState(true);
   const [input, setInput] = useState('');
 
-  // Ref to store conversation ID for fetch wrapper
+  // Refs to store values for prepareSendMessagesRequest closure
   const conversationIdRef = useRef<string | null>(currentConversationId);
+  const sessionRef = useRef<ReturnType<typeof getSession>>(null);
+  const agentIdRef = useRef<string | null>(agentId);
 
-  // Keep ref in sync with state
+  // Keep refs in sync with state
   useEffect(() => {
     conversationIdRef.current = currentConversationId;
   }, [currentConversationId]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    agentIdRef.current = agentId;
+  }, [agentId]);
 
   // Initialize session
   useEffect(() => {
@@ -112,6 +122,34 @@ function ChatInterface() {
     transport: new DefaultChatTransport({
       api: '/api/chat',
       fetch: customFetch,
+      // Custom request preparation to ensure message is sent correctly
+      prepareSendMessagesRequest: ({ messages: chatMessages, id }) => {
+        // Get the last user message text from parts array (AI SDK v6 format)
+        const lastMessage = chatMessages[chatMessages.length - 1];
+        let messageText = '';
+
+        if (lastMessage && lastMessage.role === 'user' && lastMessage.parts) {
+          for (const part of lastMessage.parts) {
+            if (part.type === 'text' && 'text' in part) {
+              messageText += (part as { type: 'text'; text: string }).text;
+            }
+          }
+        }
+
+        // Use refs to get current values (closures would have stale values)
+        return {
+          body: {
+            // Send message in legacy format for backend compatibility
+            message: messageText,
+            messages: chatMessages,
+            chatbot_id: agentIdRef.current,
+            conversation_id: conversationIdRef.current,
+            user_id: sessionRef.current?.user.id,
+            company_id: sessionRef.current?.company.id,
+            id,
+          },
+        };
+      },
     }),
     onError: (err) => {
       console.error('Chat error:', err);
@@ -165,20 +203,11 @@ function ChatInterface() {
       e?.preventDefault();
       if (!input.trim() || isLoading) return;
 
-      sendMessage(
-        { text: input },
-        {
-          body: {
-            chatbot_id: agentId,
-            conversation_id: currentConversationId,
-            user_id: session?.user.id,
-            company_id: session?.company.id,
-          },
-        }
-      );
+      // Just send the message text - prepareSendMessagesRequest handles the body
+      sendMessage({ text: input });
       setInput('');
     },
-    [input, isLoading, sendMessage, agentId, currentConversationId, session]
+    [input, isLoading, sendMessage]
   );
 
   // Scroll to bottom on new messages
