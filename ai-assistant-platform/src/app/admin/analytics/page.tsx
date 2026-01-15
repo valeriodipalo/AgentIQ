@@ -1,20 +1,24 @@
 /**
  * Analytics Dashboard Page
- * Displays usage statistics and metrics
+ * Displays usage statistics and metrics with company filtering
  */
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   MessageSquare,
   Bot,
   ThumbsUp,
+  ThumbsDown,
   Users,
   TrendingUp,
   TrendingDown,
   AlertCircle,
   RefreshCw,
+  Building2,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -44,6 +48,27 @@ interface AnalyticsData {
     total: number;
   };
   demo_mode: boolean;
+}
+
+interface CompanyAnalytics {
+  id: string;
+  name: string;
+  slug: string;
+  user_count: number;
+  conversation_count: number;
+  message_count: number;
+  feedback: {
+    positive: number;
+    negative: number;
+    total: number;
+    positive_rate: number;
+  };
+  last_activity: string | null;
+}
+
+interface Company {
+  id: string;
+  name: string;
 }
 
 interface StatCardProps {
@@ -159,16 +184,44 @@ function MetricBreakdown({ title, items, loading }: MetricBreakdownProps) {
 }
 
 export default function AnalyticsPage() {
+  const router = useRouter();
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [companyAnalytics, setCompanyAnalytics] = useState<CompanyAnalytics[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [companyLoading, setCompanyLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAnalytics = async () => {
+  // Fetch companies for filter dropdown
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const response = await fetch('/api/admin/companies?per_page=100');
+        if (response.ok) {
+          const data = await response.json();
+          setCompanies(data.companies.map((c: Company) => ({ id: c.id, name: c.name })));
+        }
+      } catch (err) {
+        console.error('Error fetching companies:', err);
+      }
+    };
+
+    fetchCompanies();
+  }, []);
+
+  // Fetch analytics
+  const fetchAnalytics = useCallback(async (companyId?: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('/api/admin/analytics');
+      const params = new URLSearchParams();
+      if (companyId) {
+        params.set('company_id', companyId);
+      }
+
+      const response = await fetch(`/api/admin/analytics?${params}`);
       if (!response.ok) {
         throw new Error('Failed to fetch analytics');
       }
@@ -180,11 +233,52 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Fetch company analytics
+  const fetchCompanyAnalytics = useCallback(async () => {
+    setCompanyLoading(true);
+
+    try {
+      const response = await fetch('/api/admin/analytics/companies');
+      if (response.ok) {
+        const data = await response.json();
+        setCompanyAnalytics(data.companies || []);
+      }
+    } catch (err) {
+      console.error('Error fetching company analytics:', err);
+    } finally {
+      setCompanyLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchAnalytics();
-  }, []);
+    fetchAnalytics(selectedCompany || undefined);
+  }, [selectedCompany, fetchAnalytics]);
+
+  useEffect(() => {
+    fetchCompanyAnalytics();
+  }, [fetchCompanyAnalytics]);
+
+  // Handle company filter change
+  const handleCompanyChange = (companyId: string) => {
+    setSelectedCompany(companyId);
+  };
+
+  // Navigate to company detail
+  const handleCompanyClick = (companyId: string) => {
+    router.push(`/admin/analytics/company/${companyId}`);
+  };
+
+  // Format date
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Never';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   return (
     <div className="p-6 lg:p-8">
@@ -198,24 +292,33 @@ export default function AnalyticsPage() {
             Overview of your platform usage and metrics
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={fetchAnalytics}
-          disabled={loading}
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Demo mode notice */}
-      {data?.demo_mode && (
-        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-          <p className="text-sm text-blue-700 dark:text-blue-400">
-            You are viewing demo data. Sign in to see your actual analytics.
-          </p>
+        <div className="flex items-center gap-3">
+          {/* Company Filter */}
+          <select
+            value={selectedCompany}
+            onChange={(e) => handleCompanyChange(e.target.value)}
+            className="h-10 rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          >
+            <option value="">All Companies</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.id}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="outline"
+            onClick={() => {
+              fetchAnalytics(selectedCompany || undefined);
+              fetchCompanyAnalytics();
+            }}
+            disabled={loading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
-      )}
+      </div>
 
       {/* Error message */}
       {error && (
@@ -225,7 +328,7 @@ export default function AnalyticsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchAnalytics}
+            onClick={() => fetchAnalytics(selectedCompany || undefined)}
             className="ml-auto"
           >
             Retry
@@ -273,6 +376,127 @@ export default function AnalyticsPage() {
           loading={loading}
         />
       </div>
+
+      {/* Company Analytics Table */}
+      {!selectedCompany && (
+        <div className="mb-8">
+          <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                <Building2 className="h-5 w-5" />
+                Usage by Company
+              </h2>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                Click on a company to view detailed user analytics
+              </p>
+            </div>
+            {companyLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <RefreshCw className="h-8 w-8 animate-spin text-zinc-400" />
+              </div>
+            ) : companyAnalytics.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <Building2 className="h-12 w-12 text-zinc-300 dark:text-zinc-700" />
+                <p className="mt-4 text-zinc-600 dark:text-zinc-400">
+                  No companies found
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        Company
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        Users
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        Conversations
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        Messages
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        Feedback
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        Last Activity
+                      </th>
+                      <th className="px-6 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                    {companyAnalytics.map((company) => (
+                      <tr
+                        key={company.id}
+                        onClick={() => handleCompanyClick(company.id)}
+                        className="cursor-pointer transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                      >
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                              <Building2 className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                                {company.name}
+                              </p>
+                              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                {company.slug}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="flex items-center gap-1.5">
+                            <Users className="h-4 w-4 text-zinc-400" />
+                            <span className="text-zinc-600 dark:text-zinc-400">
+                              {company.user_count}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-zinc-600 dark:text-zinc-400">
+                          {company.conversation_count}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-zinc-600 dark:text-zinc-400">
+                          {company.message_count}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          {company.feedback.total > 0 ? (
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                <ThumbsUp className="h-3.5 w-3.5" />
+                                <span className="text-xs">{company.feedback.positive}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-red-600 dark:text-red-400">
+                                <ThumbsDown className="h-3.5 w-3.5" />
+                                <span className="text-xs">{company.feedback.negative}</span>
+                              </div>
+                              <span className="text-xs text-zinc-500">
+                                ({company.feedback.positive_rate}% positive)
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-zinc-400">-</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-zinc-500 dark:text-zinc-400">
+                          {formatDate(company.last_activity)}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <ChevronRight className="h-4 w-4 text-zinc-400" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Detailed Breakdowns */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -361,7 +585,7 @@ export default function AnalyticsPage() {
                 </p>
               )}
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Total Users
+                Total Users {selectedCompany && companies.find(c => c.id === selectedCompany)?.name ? `in ${companies.find(c => c.id === selectedCompany)?.name}` : ''}
               </p>
             </div>
           </div>

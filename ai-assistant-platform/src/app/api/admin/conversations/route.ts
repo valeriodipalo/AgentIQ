@@ -177,8 +177,8 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
-    const isDemoMode = true;
-    console.log('Admin conversations API: Using demo mode with admin client');
+    // Not demo mode - we're querying real data from the database
+    const isDemoMode = false;
 
     // Calculate offset for pagination
     const offset = (page - 1) * perPage;

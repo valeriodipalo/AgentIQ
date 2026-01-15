@@ -1,14 +1,20 @@
 /**
  * Admin Analytics API Route
  * Returns usage statistics for the admin dashboard
+ * Supports filtering by company_id for company-specific analytics
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { APIError } from '@/types';
 
-// Demo mode constants
-const DEMO_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+/**
+ * Validate UUID format
+ */
+function isValidUUID(id: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+}
 
 /**
  * Analytics response structure
@@ -56,17 +62,34 @@ function parseDate(dateStr: string | null): Date | null {
 
 /**
  * GET /api/admin/analytics
- * Returns usage statistics for the tenant
+ * Returns usage statistics across all companies or filtered by company_id
+ *
+ * Query Parameters:
+ * - company_id: Filter by specific company (optional)
+ * - start_date: Filter from date (optional)
+ * - end_date: Filter to date (optional)
  */
 export async function GET(request: NextRequest) {
   try {
-    // Get query parameters for date filtering
+    // Get query parameters
     const { searchParams } = new URL(request.url);
+    const companyId = searchParams.get('company_id');
     const startDateStr = searchParams.get('start_date');
     const endDateStr = searchParams.get('end_date');
 
     const startDate = parseDate(startDateStr);
     const endDate = parseDate(endDateStr);
+
+    // Validate company_id if provided
+    if (companyId && !isValidUUID(companyId)) {
+      return NextResponse.json<APIError>(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid company_id format',
+        },
+        { status: 400 }
+      );
+    }
 
     // Validate date range
     if (startDate && endDate && startDate > endDate) {
@@ -94,9 +117,8 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       );
     }
-    const isDemoMode = true;
-    const tenantId = DEMO_TENANT_ID;
-    console.log('Admin analytics API: Using demo mode with admin client');
+    // Not demo mode - we're querying real data from the database
+    const isDemoMode = false;
 
     // Build date filter for queries
     const buildDateFilter = (query: ReturnType<typeof supabase.from>, dateColumn: string = 'created_at') => {
@@ -113,11 +135,14 @@ export async function GET(request: NextRequest) {
       return filteredQuery;
     };
 
-    // Fetch conversation stats
-    const conversationsQuery = supabase
+    // Fetch conversation stats - filter by company if specified, otherwise all
+    let conversationsQuery = supabase
       .from('conversations')
-      .select('id, is_archived', { count: 'exact' })
-      .eq('tenant_id', tenantId);
+      .select('id, is_archived', { count: 'exact' });
+
+    if (companyId) {
+      conversationsQuery = conversationsQuery.eq('tenant_id', companyId);
+    }
 
     const { data: conversations, count: totalConversations } = await buildDateFilter(conversationsQuery);
 
@@ -125,13 +150,14 @@ export async function GET(request: NextRequest) {
     const archivedConversations = conversations?.filter((c: { is_archived: boolean }) => c.is_archived).length || 0;
 
     // Fetch message stats - need to join through conversations
-    // First get conversation IDs for the tenant
-    const { data: tenantConversations } = await supabase
-      .from('conversations')
-      .select('id')
-      .eq('tenant_id', tenantId);
+    // First get conversation IDs (filtered by company if specified)
+    let convQuery = supabase.from('conversations').select('id');
+    if (companyId) {
+      convQuery = convQuery.eq('tenant_id', companyId);
+    }
+    const { data: filteredConversations } = await convQuery;
 
-    const conversationIds = tenantConversations?.map(c => c.id) || [];
+    const conversationIds = filteredConversations?.map(c => c.id) || [];
 
     let totalMessages = 0;
     let userMessages = 0;
@@ -156,13 +182,14 @@ export async function GET(request: NextRequest) {
     let positiveFeedback = 0;
     let negativeFeedback = 0;
 
-    // Get user IDs for the tenant
-    const { data: tenantUsers } = await supabase
-      .from('users')
-      .select('id')
-      .eq('tenant_id', tenantId);
+    // Get user IDs (filtered by company if specified)
+    let usersQuery = supabase.from('users').select('id');
+    if (companyId) {
+      usersQuery = usersQuery.eq('tenant_id', companyId);
+    }
+    const { data: filteredUsers } = await usersQuery;
 
-    const userIds = tenantUsers?.map(u => u.id) || [];
+    const userIds = filteredUsers?.map(u => u.id) || [];
 
     if (userIds.length > 0) {
       let feedbackQuery = supabase
@@ -182,11 +209,14 @@ export async function GET(request: NextRequest) {
       ? Math.round((positiveFeedback / totalFeedback) * 100)
       : 0;
 
-    // Fetch chatbot stats
+    // Fetch chatbot stats - filter by company if specified
     let chatbotsQuery = supabase
       .from('chatbots')
-      .select('id, is_published', { count: 'exact' })
-      .eq('tenant_id', tenantId);
+      .select('id, is_published', { count: 'exact' });
+
+    if (companyId) {
+      chatbotsQuery = chatbotsQuery.eq('tenant_id', companyId);
+    }
 
     chatbotsQuery = buildDateFilter(chatbotsQuery);
     const { data: chatbots, count: totalChatbots } = await chatbotsQuery;
@@ -194,11 +224,15 @@ export async function GET(request: NextRequest) {
     const publishedChatbots = chatbots?.filter(c => c.is_published).length || 0;
     const unpublishedChatbots = chatbots?.filter(c => !c.is_published).length || 0;
 
-    // Fetch user count
-    const { count: totalUsers } = await supabase
+    // Fetch user count - filter by company if specified
+    let userCountQuery = supabase
       .from('users')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId);
+      .select('id', { count: 'exact', head: true });
+
+    if (companyId) {
+      userCountQuery = userCountQuery.eq('tenant_id', companyId);
+    }
+    const { count: totalUsers } = await userCountQuery;
 
     // Build response
     const response: AnalyticsResponse = {
