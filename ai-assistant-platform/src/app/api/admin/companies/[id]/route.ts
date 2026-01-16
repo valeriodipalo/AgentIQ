@@ -556,7 +556,32 @@ export async function DELETE(
         .eq('tenant_id', companyId);
       const conversationIds = conversations?.map(c => c.id) || [];
 
-      // Delete in order to respect foreign key constraints:
+      // First, break circular foreign key references by setting them to NULL
+
+      // Clear users.invited_via (references invite_codes)
+      if (userIds.length > 0) {
+        const { error: clearInvitedViaError } = await supabase
+          .from('users')
+          .update({ invited_via: null })
+          .eq('tenant_id', companyId);
+        if (clearInvitedViaError) {
+          console.error('Error clearing users.invited_via:', clearInvitedViaError);
+        }
+      }
+
+      // Clear invite_codes.created_by (references users)
+      const { error: clearInviteCreatedByError } = await supabase
+        .from('invite_codes')
+        .update({ created_by: null })
+        .eq('tenant_id', companyId);
+      if (clearInviteCreatedByError) {
+        console.error('Error clearing invite_codes.created_by:', clearInviteCreatedByError);
+      }
+
+      // Note: chatbots.created_by is NOT NULL, so we can't clear it
+      // But since we delete chatbots before users, this is fine
+
+      // Now delete in order to respect remaining foreign key constraints:
 
       // 1. Delete feedback (references users and messages)
       if (userIds.length > 0) {
