@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, MessageSquare, ArrowRight, Loader2, Calendar } from 'lucide-react';
+import { Bot, MessageSquare, ArrowRight, Loader2 } from 'lucide-react';
 import { getSession } from '@/lib/session';
 
 interface Chatbot {
@@ -165,33 +165,25 @@ export default function WorkspacePage() {
                   index !== 0 ? 'border-t border-zinc-200 dark:border-zinc-800' : ''
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                    <MessageSquare className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                    <Bot className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                        {conv.title || 'Untitled conversation'}
-                      </p>
-                      <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                        <Bot className="mr-1 h-3 w-3" />
-                        {conv.chatbot_name}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {formatDate(conv.updated_at)}
-                      </span>
+                    <p className="font-semibold text-blue-600 dark:text-blue-400">
+                      {conv.chatbot_name}
+                    </p>
+                    <p className="text-sm text-zinc-900 dark:text-zinc-100">
+                      {conv.title || 'Untitled conversation'}
+                    </p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      <span>{formatDate(conv.updated_at)}</span>
                       <span>·</span>
                       <span>{conv.message_count} messages</span>
                     </div>
                   </div>
                 </div>
-                <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                  {formatRelativeTime(conv.updated_at)}
-                </span>
+                <ArrowRight className="h-5 w-5 text-zinc-400" />
               </button>
             ))}
           </div>
