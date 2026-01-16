@@ -542,34 +542,33 @@ export async function DELETE(
     if (forceDelete && hasData) {
       console.log('Force deleting company with all associated data...');
 
-      // Get all user IDs for this company (needed for feedback deletion)
+      // Get all user IDs for this company
       const { data: users } = await supabase
         .from('users')
         .select('id')
         .eq('tenant_id', companyId);
       const userIds = users?.map(u => u.id) || [];
 
-      // Get all conversation IDs (needed for messages deletion)
+      // Get all conversation IDs
       const { data: conversations } = await supabase
         .from('conversations')
         .select('id')
         .eq('tenant_id', companyId);
       const conversationIds = conversations?.map(c => c.id) || [];
 
-      // First, break circular foreign key references by setting them to NULL
+      // STEP 1: Break circular FK references FIRST
+      console.log('Breaking circular FK references...');
 
-      // Clear users.invited_via (references invite_codes)
-      if (userIds.length > 0) {
-        const { error: clearInvitedViaError } = await supabase
-          .from('users')
-          .update({ invited_via: null })
-          .eq('tenant_id', companyId);
-        if (clearInvitedViaError) {
-          console.error('Error clearing users.invited_via:', clearInvitedViaError);
-        }
+      // Clear users.invited_via (users → invite_codes)
+      const { error: clearInvitedViaError } = await supabase
+        .from('users')
+        .update({ invited_via: null })
+        .eq('tenant_id', companyId);
+      if (clearInvitedViaError) {
+        console.error('Error clearing users.invited_via:', clearInvitedViaError);
       }
 
-      // Clear invite_codes.created_by (references users)
+      // Clear invite_codes.created_by (invite_codes → users)
       const { error: clearInviteCreatedByError } = await supabase
         .from('invite_codes')
         .update({ created_by: null })
@@ -578,102 +577,77 @@ export async function DELETE(
         console.error('Error clearing invite_codes.created_by:', clearInviteCreatedByError);
       }
 
-      // Note: chatbots.created_by is NOT NULL, so we can't clear it
-      // But since we delete chatbots before users, this is fine
+      // STEP 2: Delete in proper order
+      console.log('Deleting data in order...');
 
-      // Now delete in order to respect remaining foreign key constraints:
-
-      // 1. Delete feedback (references users and messages)
+      // 2a. Delete feedback (references users and messages)
       if (userIds.length > 0) {
-        const { error: feedbackError } = await supabase
-          .from('feedback')
-          .delete()
-          .in('user_id', userIds);
-        if (feedbackError) {
-          console.error('Error deleting feedback:', feedbackError);
-        }
+        const { error } = await supabase.from('feedback').delete().in('user_id', userIds);
+        if (error) console.error('Error deleting feedback:', error);
       }
 
-      // 2. Delete messages (references conversations)
+      // 2b. Delete messages (references conversations)
       if (conversationIds.length > 0) {
-        const { error: messagesError } = await supabase
-          .from('messages')
-          .delete()
-          .in('conversation_id', conversationIds);
-        if (messagesError) {
-          console.error('Error deleting messages:', messagesError);
-        }
+        const { error } = await supabase.from('messages').delete().in('conversation_id', conversationIds);
+        if (error) console.error('Error deleting messages:', error);
       }
 
-      // 3. Delete conversations (references tenant, user, chatbot)
-      const { error: conversationsError } = await supabase
-        .from('conversations')
-        .delete()
-        .eq('tenant_id', companyId);
-      if (conversationsError) {
-        console.error('Error deleting conversations:', conversationsError);
+      // 2c. Delete conversations (references users, chatbots)
+      {
+        const { error } = await supabase.from('conversations').delete().eq('tenant_id', companyId);
+        if (error) console.error('Error deleting conversations:', error);
       }
 
-      // 4. Delete invite_redemptions (references invite_codes and users)
+      // 2d. Delete invite_redemptions (references users, invite_codes)
       if (userIds.length > 0) {
-        const { error: redemptionsError } = await supabase
-          .from('invite_redemptions')
-          .delete()
-          .in('user_id', userIds);
-        if (redemptionsError) {
-          console.error('Error deleting invite redemptions:', redemptionsError);
+        const { error } = await supabase.from('invite_redemptions').delete().in('user_id', userIds);
+        if (error) console.error('Error deleting invite_redemptions:', error);
+      }
+
+      // 2e. Delete chatbots BEFORE users (chatbots.created_by → users)
+      {
+        const { error } = await supabase.from('chatbots').delete().eq('tenant_id', companyId);
+        if (error) console.error('Error deleting chatbots:', error);
+      }
+
+      // 2f. Delete invite_codes (now safe since users.invited_via is cleared)
+      {
+        const { error } = await supabase.from('invite_codes').delete().eq('tenant_id', companyId);
+        if (error) console.error('Error deleting invite_codes:', error);
+      }
+
+      // 2g. Finally delete users
+      {
+        const { error: usersError } = await supabase.from('users').delete().eq('tenant_id', companyId);
+        if (usersError) {
+          console.error('Error deleting users:', usersError);
+          return NextResponse.json<APIError>(
+            {
+              code: 'SUPABASE_ERROR',
+              message: 'Error deleting users: ' + usersError.message,
+              details: { error: usersError.message },
+            },
+            { status: 500 }
+          );
         }
       }
 
-      // 5. Delete invite_codes (references tenant)
-      const { error: inviteCodesError } = await supabase
-        .from('invite_codes')
-        .delete()
-        .eq('tenant_id', companyId);
-      if (inviteCodesError) {
-        console.error('Error deleting invite codes:', inviteCodesError);
-      }
-
-      // 6. Delete chatbots (references tenant)
-      const { error: chatbotsError } = await supabase
-        .from('chatbots')
-        .delete()
-        .eq('tenant_id', companyId);
-      if (chatbotsError) {
-        console.error('Error deleting chatbots:', chatbotsError);
-      }
-
-      // 7. Delete users (references tenant)
-      const { error: usersError } = await supabase
-        .from('users')
-        .delete()
-        .eq('tenant_id', companyId);
-      if (usersError) {
-        console.error('Error deleting users:', usersError);
-        return NextResponse.json<APIError>(
-          {
-            code: 'SUPABASE_ERROR',
-            message: 'Error deleting users',
-            details: { error: usersError.message },
-          },
-          { status: 500 }
-        );
-      }
+      console.log('All associated data deleted successfully');
     }
 
-    // 8. Finally delete the company/tenant
-    const { error: deleteError } = await supabase
+    // Finally delete the company/tenant
+    const { error: tenantDeleteError } = await supabase
       .from('tenants')
       .delete()
       .eq('id', companyId);
 
-    if (deleteError) {
-      console.error('Error deleting company:', deleteError);
+    if (tenantDeleteError) {
+      console.error('Error deleting company:', tenantDeleteError);
       return NextResponse.json<APIError>(
         {
           code: 'SUPABASE_ERROR',
           message: 'Error deleting company',
-          details: { error: deleteError.message },
+          details: { error: tenantDeleteError.message },
         },
         { status: 500 }
       );
