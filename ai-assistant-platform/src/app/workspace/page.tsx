@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, MessageSquare, ArrowRight, Loader2 } from 'lucide-react';
+import { Bot, MessageSquare, ArrowRight, Loader2, Calendar } from 'lucide-react';
 import { getSession } from '@/lib/session';
 
 interface Chatbot {
@@ -79,6 +79,15 @@ export default function WorkspacePage() {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString();
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   if (isLoading) {
@@ -161,15 +170,26 @@ export default function WorkspacePage() {
                     <MessageSquare className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
                   </div>
                   <div>
-                    <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                      {conv.title || 'Untitled conversation'}
-                    </p>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                      {conv.chatbot_name} · {conv.message_count} messages
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                        {conv.title || 'Untitled conversation'}
+                      </p>
+                      <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                        <Bot className="mr-1 h-3 w-3" />
+                        {conv.chatbot_name}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {formatDate(conv.updated_at)}
+                      </span>
+                      <span>·</span>
+                      <span>{conv.message_count} messages</span>
+                    </div>
                   </div>
                 </div>
-                <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                <span className="text-xs text-zinc-400 dark:text-zinc-500">
                   {formatRelativeTime(conv.updated_at)}
                 </span>
               </button>
