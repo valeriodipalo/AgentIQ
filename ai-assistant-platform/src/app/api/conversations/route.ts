@@ -24,6 +24,7 @@ function isValidUUID(id: string): boolean {
  * Extended conversation type with additional computed fields
  */
 interface ConversationWithPreview extends Conversation {
+  chatbot_name?: string;
   last_message_preview?: string;
   last_message_at?: string;
 }
@@ -104,11 +105,11 @@ export async function GET(request: NextRequest) {
 
     console.log('Conversations API: Using user_id:', effectiveUserId);
 
-    // Query conversations with count
+    // Query conversations with count, including chatbot name
     const offset = (page - 1) * perPage;
     let query = supabase
       .from('conversations')
-      .select('*', { count: 'exact' })
+      .select('*, chatbots(name)', { count: 'exact' })
       .eq('user_id', effectiveUserId)
       .eq('is_archived', archived)
       .order('updated_at', { ascending: false });
@@ -145,9 +146,12 @@ export async function GET(request: NextRequest) {
           .single();
 
         const metadata = conv.metadata as ConversationMetadata | null;
+        // Extract chatbot name from the joined data
+        const chatbotData = conv.chatbots as { name: string } | null;
 
         return {
           ...conv,
+          chatbot_name: chatbotData?.name || 'Unknown Agent',
           metadata: {
             message_count: metadata?.message_count || 0,
             total_tokens: metadata?.total_tokens || 0,
