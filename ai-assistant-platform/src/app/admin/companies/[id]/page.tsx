@@ -6,7 +6,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -20,6 +20,9 @@ import {
   Loader2,
   AlertCircle,
   Ticket,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -162,11 +165,15 @@ function StatCard({ title, value, subtitle, icon: Icon, href, loading }: StatCar
 
 export default function CompanyDashboardPage() {
   const params = useParams();
+  const router = useRouter();
   const companyId = params.id as string;
 
   const [data, setData] = useState<CompanyDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Fetch company data
   const fetchCompanyData = useCallback(async () => {
@@ -206,6 +213,31 @@ export default function CompanyDashboardPage() {
       fetchCompanyData();
     }
   }, [companyId, fetchCompanyData]);
+
+  // Handle company deletion
+  const handleDeleteCompany = async () => {
+    setDeleteLoading(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(`/api/admin/companies/${companyId}?force=true`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete company');
+      }
+
+      // Redirect to companies list after successful deletion
+      router.push('/admin/companies');
+    } catch (err) {
+      console.error('Error deleting company:', err);
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete company');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   // Format date
   const formatDate = (dateString: string) => {
@@ -302,14 +334,100 @@ export default function CompanyDashboardPage() {
               </p>
             </div>
           </div>
-          <Link href={`/admin/companies/${companyId}/edit`}>
-            <Button variant="outline">
-              <Edit className="mr-2 h-4 w-4" />
-              Edit Company
+          <div className="flex gap-2">
+            <Link href={`/admin/companies/${companyId}/edit`}>
+              <Button variant="outline">
+                <Edit className="mr-2 h-4 w-4" />
+                Edit Company
+              </Button>
+            </Link>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(true)}
+              className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Company
             </Button>
-          </Link>
+          </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-md rounded-xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                  Delete Company
+                </h3>
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                  Are you sure you want to delete <strong>{company?.name}</strong>? This action cannot be undone.
+                </p>
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                    The following data will be permanently deleted:
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-red-700 dark:text-red-400">
+                    <li>• {stats?.user_count || 0} users</li>
+                    <li>• {stats?.chatbot_count || 0} chatbots</li>
+                    <li>• {stats?.conversation_count || 0} conversations</li>
+                    <li>• All messages and feedback</li>
+                    <li>• All invite codes</li>
+                  </ul>
+                </div>
+                {deleteError && (
+                  <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                    <p className="text-sm text-red-700 dark:text-red-400">{deleteError}</p>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setShowDeleteDialog(false);
+                  setDeleteError(null);
+                }}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteDialog(false);
+                  setDeleteError(null);
+                }}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDeleteCompany}
+                disabled={deleteLoading}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                {deleteLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Company
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Demo mode notice */}
       {data?.demo_mode && (

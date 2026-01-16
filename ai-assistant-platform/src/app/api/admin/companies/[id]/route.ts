@@ -430,7 +430,10 @@ export async function PUT(
 
 /**
  * DELETE /api/admin/companies/[id]
- * Deletes a specific company (checks for existing data first)
+ * Deletes a specific company
+ *
+ * Query Parameters:
+ * - force=true: Cascade delete all associated data (users, conversations, etc.)
  */
 export async function DELETE(
   request: NextRequest,
@@ -438,6 +441,8 @@ export async function DELETE(
 ) {
   try {
     const { id: companyId } = await params;
+    const { searchParams } = new URL(request.url);
+    const forceDelete = searchParams.get('force') === 'true';
 
     if (!companyId) {
       return NextResponse.json<APIError>(
@@ -474,8 +479,7 @@ export async function DELETE(
         { status: 500 }
       );
     }
-    const isDemoMode = true;
-    console.log('Admin companies API: Using demo mode for deletion');
+    console.log('Admin companies API: Deleting company', companyId, 'force:', forceDelete);
 
     // Verify company exists
     const { data: existing, error: fetchError } = await supabase
@@ -510,24 +514,129 @@ export async function DELETE(
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', companyId);
 
+    const { count: inviteCodeCount } = await supabase
+      .from('invite_codes')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', companyId);
+
     const hasData = (userCount || 0) > 0 || (chatbotCount || 0) > 0 || (conversationCount || 0) > 0;
 
-    if (hasData) {
+    // If not force delete and has data, return error with counts
+    if (!forceDelete && hasData) {
       return NextResponse.json<APIError>(
         {
-          code: 'VALIDATION_ERROR',
-          message: 'Cannot delete company with existing data. Please delete all users, chatbots, and conversations first.',
+          code: 'HAS_ASSOCIATED_DATA',
+          message: 'Company has associated data. Use force=true to delete all data.',
           details: {
             user_count: userCount || 0,
             chatbot_count: chatbotCount || 0,
             conversation_count: conversationCount || 0,
+            invite_code_count: inviteCodeCount || 0,
           },
         },
         { status: 409 }
       );
     }
 
-    // Delete company
+    // If force delete, cascade delete all associated data
+    if (forceDelete && hasData) {
+      console.log('Force deleting company with all associated data...');
+
+      // Get all user IDs for this company (needed for feedback deletion)
+      const { data: users } = await supabase
+        .from('users')
+        .select('id')
+        .eq('tenant_id', companyId);
+      const userIds = users?.map(u => u.id) || [];
+
+      // Get all conversation IDs (needed for messages deletion)
+      const { data: conversations } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('tenant_id', companyId);
+      const conversationIds = conversations?.map(c => c.id) || [];
+
+      // Delete in order to respect foreign key constraints:
+
+      // 1. Delete feedback (references users and messages)
+      if (userIds.length > 0) {
+        const { error: feedbackError } = await supabase
+          .from('feedback')
+          .delete()
+          .in('user_id', userIds);
+        if (feedbackError) {
+          console.error('Error deleting feedback:', feedbackError);
+        }
+      }
+
+      // 2. Delete messages (references conversations)
+      if (conversationIds.length > 0) {
+        const { error: messagesError } = await supabase
+          .from('messages')
+          .delete()
+          .in('conversation_id', conversationIds);
+        if (messagesError) {
+          console.error('Error deleting messages:', messagesError);
+        }
+      }
+
+      // 3. Delete conversations (references tenant, user, chatbot)
+      const { error: conversationsError } = await supabase
+        .from('conversations')
+        .delete()
+        .eq('tenant_id', companyId);
+      if (conversationsError) {
+        console.error('Error deleting conversations:', conversationsError);
+      }
+
+      // 4. Delete invite_redemptions (references invite_codes and users)
+      if (userIds.length > 0) {
+        const { error: redemptionsError } = await supabase
+          .from('invite_redemptions')
+          .delete()
+          .in('user_id', userIds);
+        if (redemptionsError) {
+          console.error('Error deleting invite redemptions:', redemptionsError);
+        }
+      }
+
+      // 5. Delete invite_codes (references tenant)
+      const { error: inviteCodesError } = await supabase
+        .from('invite_codes')
+        .delete()
+        .eq('tenant_id', companyId);
+      if (inviteCodesError) {
+        console.error('Error deleting invite codes:', inviteCodesError);
+      }
+
+      // 6. Delete chatbots (references tenant)
+      const { error: chatbotsError } = await supabase
+        .from('chatbots')
+        .delete()
+        .eq('tenant_id', companyId);
+      if (chatbotsError) {
+        console.error('Error deleting chatbots:', chatbotsError);
+      }
+
+      // 7. Delete users (references tenant)
+      const { error: usersError } = await supabase
+        .from('users')
+        .delete()
+        .eq('tenant_id', companyId);
+      if (usersError) {
+        console.error('Error deleting users:', usersError);
+        return NextResponse.json<APIError>(
+          {
+            code: 'SUPABASE_ERROR',
+            message: 'Error deleting users',
+            details: { error: usersError.message },
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    // 8. Finally delete the company/tenant
     const { error: deleteError } = await supabase
       .from('tenants')
       .delete()
@@ -550,6 +659,12 @@ export async function DELETE(
       deleted_id: companyId,
       deleted_name: existing.name,
       deleted_slug: existing.slug,
+      deleted_data: forceDelete ? {
+        users: userCount || 0,
+        chatbots: chatbotCount || 0,
+        conversations: conversationCount || 0,
+        invite_codes: inviteCodeCount || 0,
+      } : null,
     });
   } catch (error) {
     console.error('Admin company API error:', error);
